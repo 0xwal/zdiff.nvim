@@ -53,9 +53,16 @@ local function complete_git_refs(arg_lead, _, _)
   return refs
 end
 
--- Directory + git ref completion
+local open_modes = { replace = true, borrow = true, tab = true }
+
+-- Directory, open mode and git ref completion
 local function complete_zdiff(arg_lead, cmd_line, cursor_pos)
   local candidates = complete_git_refs(arg_lead, cmd_line, cursor_pos)
+  for mode in pairs(open_modes) do
+    if mode:find(arg_lead, 1, true) == 1 then
+      table.insert(candidates, mode)
+    end
+  end
   vim.list_extend(candidates, vim.fn.getcompletion(arg_lead, "dir"))
   return candidates
 end
@@ -64,9 +71,10 @@ end
 vim.api.nvim_create_user_command("Zdiff", function(opts)
   local ref = nil
   local dir = nil
+  local mode = nil
 
-  -- Arguments are order independent: an existing directory sets the scope,
-  -- anything else is treated as a git ref.
+  -- Arguments are order independent: an existing directory sets the scope, an
+  -- open mode name sets the window handling, anything else is a git ref.
   for _, arg in ipairs(opts.fargs) do
     if vim.fn.isdirectory(vim.fs.normalize(arg)) == 1 then
       if dir then
@@ -74,6 +82,12 @@ vim.api.nvim_create_user_command("Zdiff", function(opts)
         return
       end
       dir = arg
+    elseif open_modes[arg] then
+      if mode then
+        vim.notify("[zdiff] Only one open mode argument is supported", vim.log.levels.ERROR)
+        return
+      end
+      mode = arg
     else
       if ref then
         vim.notify("[zdiff] Only one git ref argument is supported", vim.log.levels.ERROR)
@@ -88,10 +102,10 @@ vim.api.nvim_create_user_command("Zdiff", function(opts)
     dir = false
   end
 
-  require("zdiff").open(ref, dir)
+  require("zdiff").open(ref, dir, mode)
 end, {
   nargs = "*",
   bang = true,
   complete = complete_zdiff,
-  desc = "Open zdiff (optionally against a git ref and/or limited to a directory)",
+  desc = "Open zdiff (optionally against a git ref, a directory and/or an open mode)",
 })

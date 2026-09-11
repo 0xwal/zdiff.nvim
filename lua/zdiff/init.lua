@@ -28,6 +28,9 @@ local winbar = require("zdiff.winbar")
 ---@field root string|nil git repository root for the current zdiff session
 ---@field base_ref string|nil the git ref to diff against (nil = uncommitted changes vs HEAD)
 ---@field scope string|nil repo-relative directory the listing is limited to (nil = whole repo)
+---@field open_mode "replace"|"borrow"|"tab"|nil how the current session took its window
+---@field prev_buf number|nil buffer the borrowed window showed before zdiff
+---@field own_tab number|nil tabpage zdiff created in "tab" mode
 ---@field vcs "git"|"jj"|nil repository kind the header template is resolved for
 ---@field head_label string|nil git branch, or jj bookmarks/change id, shown in the header
 ---@field head_desc string|nil jj description of `@`, shown by the <desc> placeholder
@@ -56,6 +59,9 @@ local state = {
   root = nil,
   base_ref = nil,
   scope = nil,
+  open_mode = nil,
+  prev_buf = nil,
+  own_tab = nil,
   vcs = nil,
   head_label = nil,
   head_desc = nil,
@@ -93,6 +99,7 @@ local update_winbar
 ---@class ZdiffConfig
 ---@field default_expanded boolean Whether files are expanded by default
 ---@field default_branch string|nil Default branch for toggle_mode (e.g., "main", "develop")
+---@field open_mode "replace"|"borrow"|"tab" Where the zdiff buffer is shown
 ---@field header string Header line template, see zdiff-config-header
 ---@field git_header string|nil Header template used in git repositories
 ---@field jj_header string|nil Header template used in jj repositories
@@ -108,6 +115,7 @@ local update_winbar
 M.config = {
   default_expanded = false,
   default_branch = "main",
+  open_mode = "replace",
   header = "diffs(<branch>): <path>",
   git_header = nil,
   jj_header = nil,
@@ -530,6 +538,70 @@ local function apply_zdiff_window_opts(win)
   vim.wo[win].cursorline = true
   -- Paths are not prose; spell marks would fight the file name highlights.
   vim.wo[win].spell = false
+end
+
+local OPEN_MODES = { replace = true, borrow = true, tab = true }
+
+---@param override string|nil
+---@return "replace"|"borrow"|"tab"
+local function resolve_open_mode(override)
+  return normalize_enum(override or M.config.open_mode, OPEN_MODES, "replace")
+end
+
+---Take the window the zdiff buffer will live in.
+---@param mode "replace"|"borrow"|"tab"
+---@return number win
+local function acquire_window(mode)
+  if mode == "tab" then
+    -- `tab split` instead of `tabnew`: no throwaway empty buffer to clean up.
+    vim.cmd("tab split")
+    state.own_tab = vim.api.nvim_get_current_tabpage()
+    return vim.api.nvim_get_current_win()
+  end
+
+  local win = vim.api.nvim_get_current_win()
+  if mode == "borrow" then
+    local buf = vim.api.nvim_win_get_buf(win)
+    if buf ~= state.buf then
+      state.prev_buf = buf
+    end
+  end
+  return win
+end
+
+---Undo whatever acquire_window did, before the zdiff buffer is deleted.
+local function release_window()
+  local mode = state.open_mode or "replace"
+
+  if mode == "tab" then
+    if state.own_tab and vim.api.nvim_tabpage_is_valid(state.own_tab) then
+      pcall(function()
+        vim.api.nvim_set_current_tabpage(state.own_tab)
+        vim.cmd("tabclose")
+      end)
+    end
+    return
+  end
+
+  if mode ~= "borrow" then
+    return
+  end
+
+  local win = state.win
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  if vim.api.nvim_win_get_buf(win) ~= state.buf then
+    return
+  end
+
+  if state.prev_buf and vim.api.nvim_buf_is_valid(state.prev_buf) then
+    vim.api.nvim_win_set_buf(win, state.prev_buf)
+  else
+    vim.api.nvim_win_call(win, function()
+      vim.cmd("enew")
+    end)
+  end
 end
 
 ---@param win number
@@ -1643,12 +1715,16 @@ local function close()
   for win, _ in pairs(state.win_opts) do
     restore_window_opts(win)
   end
+  release_window()
   if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
     vim.api.nvim_buf_delete(state.buf, { force = true })
   end
   state.files = {}
   state.buf = nil
   state.win = nil
+  state.open_mode = nil
+  state.prev_buf = nil
+  state.own_tab = nil
   state.root = nil
   state.vcs = nil
   state.head_label = nil
@@ -1666,8 +1742,11 @@ end
 ---Create the zdiff buffer and window
 ---@param base_ref? string git ref to diff against (e.g., "main", "develop", "HEAD~3"). If nil, shows uncommitted changes.
 ---@param scope_dir? string|false directory to limit the listing to. nil uses the `scope` config, false forces the whole repository.
-function M.open(base_ref, scope_dir)
+---@param open_mode? "replace"|"borrow"|"tab" where to show the buffer. If nil, uses the `open_mode` config.
+function M.open(base_ref, scope_dir, open_mode)
   highlight.setup()
+
+  local mode = resolve_open_mode(open_mode)
 
   -- Check if we're in a git repo
   local root_result = git.root()
@@ -1696,16 +1775,27 @@ function M.open(base_ref, scope_dir)
 
   -- If zdiff buffer already exists and we're switching refs, close it first
   if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-    if state.root == root and state.base_ref == base_ref and state.scope == scope then
-      -- Same ref, just switch to the buffer
-      state.win = vim.api.nvim_get_current_win()
+    if
+      state.root == root
+      and state.base_ref == base_ref
+      and state.scope == scope
+      and state.open_mode == mode
+    then
+      -- Same session: focus the tab it owns, or take the current window.
+      local own_tab = state.own_tab
+      if mode == "tab" and own_tab and vim.api.nvim_tabpage_is_valid(own_tab) then
+        vim.api.nvim_set_current_tabpage(own_tab)
+        state.win = vim.api.nvim_get_current_win()
+      else
+        state.win = acquire_window(mode)
+      end
       vim.api.nvim_win_set_buf(state.win, state.buf)
       save_window_opts(state.win)
       apply_zdiff_window_opts(state.win)
       update_winbar(state.win)
       return
     else
-      -- Different ref, close and reopen
+      -- Different ref or open mode, close and reopen
       close()
     end
   end
@@ -1717,6 +1807,7 @@ function M.open(base_ref, scope_dir)
   state.root = root
   state.base_ref = base_ref
   state.scope = scope
+  state.open_mode = mode
   state.load_error = nil
 
   -- Create buffer
@@ -1728,8 +1819,7 @@ function M.open(base_ref, scope_dir)
   vim.bo[state.buf].filetype = "zdiff"
   vim.api.nvim_clear_autocmds({ group = augroup })
 
-  -- Open in current window
-  state.win = vim.api.nvim_get_current_win()
+  state.win = acquire_window(mode)
   vim.api.nvim_win_set_buf(state.win, state.buf)
 
   -- Window options

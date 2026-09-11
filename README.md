@@ -104,8 +104,10 @@ vim.keymap.set("n", "<leader>zD", function() require("zdiff").open("main") end, 
 | `:Zdiff origin/feature` | Changes compared to remote branch |
 | `:Zdiff lua` | Uncommitted changes under `lua/` |
 | `:Zdiff main lua` | Changes vs `main` under `lua/` (same as `:Zdiff lua main`) |
+| `:Zdiff tab` | Uncommitted changes in a new tab page |
+| `:Zdiff main lua tab` | All three at once |
 
-Arguments are order independent: an argument naming an existing directory sets the scope, anything else is treated as a git ref.
+Arguments are order independent: an argument naming an existing directory sets the scope, `replace`/`borrow`/`tab` set the open mode (see `open_mode`), anything else is treated as a git ref.
 
 By default the listing is limited to the current working directory, so opening Neovim in a subdirectory of a large repository does not show changes in sibling directories. Set `scope = "root"` to list the whole repository instead.
 
@@ -136,6 +138,14 @@ require("zdiff").setup({
 
   -- Default branch for toggle_mode (m key)
   default_branch = "main",
+
+  -- Where the zdiff buffer is shown, and what closing it leaves behind:
+  --   "replace" focused window, closing deletes the buffer (window
+  --             usually closes with it)
+  --   "borrow"  focused window, closing puts the previous buffer back
+  --   "tab"     a new tab page, closing closes that tab
+  -- `:Zdiff replace|borrow|tab` overrides this per invocation.
+  open_mode = "replace",
 
   -- Header line template. Placeholders:
   --   <branch>  git branch, or jj bookmarks at @ (comma separated),

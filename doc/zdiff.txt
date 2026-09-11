@@ -46,16 +46,22 @@ Run `:checkhealth zdiff` to verify your setup.
 3. COMMANDS                                                   *zdiff-commands*
 
                                                                       *:Zdiff*
-:Zdiff[!] [ref] [dir]
+:Zdiff[!] [ref] [dir] [mode]
     Open zdiff to view changes.
 
     Without arguments, shows uncommitted changes (diff against HEAD),
     limited to the current directory (see |zdiff-config-scope|).
     With a git ref argument, shows changes between that ref and HEAD.
     With a directory argument, limits the listing to that directory.
+    With `replace`, `borrow` or `tab`, overrides |zdiff-config-open_mode|
+    for this invocation.
 
     Arguments are order independent: an argument that names an existing
-    directory sets the scope, any other argument is treated as a git ref.
+    directory sets the scope, `replace`/`borrow`/`tab` set the open mode,
+    any other argument is treated as a git ref. A directory named `tab`
+    therefore wins over the mode; a ref by that name needs a different
+    spelling, such as `refs/heads/tab`.
+
     With [!], the whole repository is listed regardless of
     |zdiff-config-scope|.
 
@@ -70,9 +76,11 @@ Run `:checkhealth zdiff` to verify your setup.
         :Zdiff lua          " Uncommitted changes under lua/
         :Zdiff main lua     " Changes vs main under lua/
         :Zdiff lua main     " Same, order does not matter
+        :Zdiff tab          " In a new tab page
+        :Zdiff main lua tab " All three at once
 <
-    Tab completion is available for branch names, tag names and
-    directories.
+    Tab completion is available for branch names, tag names,
+    directories and open modes.
 
 ==============================================================================
 4. KEYMAPS                                                     *zdiff-keymaps*
@@ -109,6 +117,9 @@ Call the setup function with an optional configuration table: >lua
 
       -- Default branch for toggle_mode (m key)
       default_branch = "main",
+
+      -- Where the zdiff buffer is shown: "replace", "borrow" or "tab"
+      open_mode = "replace",
 
       -- Header line template, used when no VCS specific one is set
       header = "diffs(<branch>): <path>",
@@ -165,6 +176,28 @@ default_branch ~
     The branch to diff against when using toggle_mode (m key).
     This allows quick switching between uncommitted changes and
     branch comparison without typing the branch name.
+
+                                                      *zdiff-config-open_mode*
+open_mode ~
+    Type: `"replace"|"borrow"|"tab"`
+    Default: `"replace"`
+
+    Where the zdiff buffer is shown, and what closing it leaves behind: >
+
+        replace  Show zdiff in the focused window. Closing deletes the
+                 zdiff buffer and lets Neovim decide what the window
+                 shows next, which usually closes the window.
+        borrow   Show zdiff in the focused window, remembering the buffer
+                 it displayed. Closing puts that buffer back, so you
+                 return to what you were reading.
+        tab      Open a new tab page for zdiff. Closing closes that tab,
+                 and Neovim returns to the tab you came from.
+<
+    `:Zdiff replace|borrow|tab` overrides this per invocation, see
+    |:Zdiff|.
+
+    In `tab` mode, opening a file with <CR> replaces zdiff inside that
+    tab. The tab is then yours: zdiff no longer closes it.
 
                                                          *zdiff-config-header*
 header ~
@@ -382,7 +415,7 @@ zdiff.setup({opts})
     This is optional - zdiff works without calling setup().
 
                                                                 *zdiff.open()*
-zdiff.open({ref}, {dir})
+zdiff.open({ref}, {dir}, {mode})
     Open zdiff with the specified git ref.
     Parameters:
         {ref}   Git ref to diff against (e.g., "main", "v1.0.0").
@@ -390,6 +423,8 @@ zdiff.open({ref}, {dir})
         {dir}   Directory to limit the listing to. If `nil` or omitted,
                 |zdiff-config-scope| decides. `false` forces the whole
                 repository.
+        {mode}  "replace", "borrow" or "tab". If `nil` or omitted,
+                |zdiff-config-open_mode| decides.
 
     Examples: >lua
         require("zdiff").open()           -- Uncommitted changes
@@ -397,6 +432,7 @@ zdiff.open({ref}, {dir})
         require("zdiff").open("HEAD~3")   -- Changes vs 3 commits ago
         require("zdiff").open(nil, "lua") -- Uncommitted changes in lua/
         require("zdiff").open(nil, false) -- Whole repository
+        require("zdiff").open(nil, nil, "tab") -- In a new tab page
 <
 
 ==============================================================================
