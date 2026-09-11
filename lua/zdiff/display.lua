@@ -13,4 +13,16 @@ function M.get_status_icon(status, icons)
   end
 end
 
+---@param status string
+---@return string highlight group for the status icon
+function M.get_status_hl(status)
+  if status == "A" or status == "?" then
+    return "ZDiffIconAdd"
+  elseif status == "D" then
+    return "ZDiffIconDelete"
+  else
+    return "ZDiffIconChange"
+  end
+end
+
 return M

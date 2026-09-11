@@ -14,6 +14,14 @@ M.links = {
   ZDiffHeaderMode = "ZDiffHeader",
   ZDiffHeaderDesc = "ZDiffHeader",
   ZDiffHeaderLoading = "ZDiffHeader",
+
+  ZDiffIcon = "Directory",
+  ZDiffIconAdd = "DiffAdd",
+  ZDiffIconDelete = "DiffDelete",
+  ZDiffIconChange = "DiffChange",
+  ZDiffFileName = "Directory",
+  ZDiffAddCount = "DiffAdd",
+  ZDiffRemoveCount = "DiffDelete",
 }
 
 function M.apply()

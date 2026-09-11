@@ -970,13 +970,14 @@ render = function()
       -- File header line
       local icon = file.expanded and M.config.icons.expanded or M.config.icons.collapsed
       local status_icon = get_status_icon(file.status)
+      local file_name = file.display_path or file.path
       local add_stat = string.format("+%d", file.insertions)
       local del_stat = string.format("-%d", file.deletions)
       local file_line = string.format(
         "%s %s %s  %s %s",
         icon,
         status_icon,
-        file.display_path or file.path,
+        file_name,
         add_stat,
         del_stat
       )
@@ -986,19 +987,26 @@ render = function()
       state.line_map[#lines] = { file_idx = file_idx }
       state.file_header_lines[file_idx] = #lines
 
-      -- Calculate positions for highlighting
+      -- Calculate positions for highlighting. Columns are byte offsets, so
+      -- multi-byte icons are measured with #.
       local line_text = lines[#lines]
+      local status_start = #icon + 1
+      local status_end = status_start + #status_icon
+      local name_start = status_end + 1
+      local name_end = name_start + #file_name
       local add_start = #line_text - #add_stat - #del_stat - 1
       local add_end = add_start + #add_stat
       local del_start = add_end + 1
       local del_end = del_start + #del_stat
 
-      -- Highlight the file path part
-      table.insert(highlights, { #lines, "Directory", 0, add_start })
-      -- Highlight +N in green
-      table.insert(highlights, { #lines, "DiffAdd", add_start, add_end })
-      -- Highlight -M in red
-      table.insert(highlights, { #lines, "DiffDelete", del_start, del_end })
+      table.insert(highlights, { #lines, "ZDiffIcon", 0, #icon })
+      table.insert(
+        highlights,
+        { #lines, display.get_status_hl(file.status), status_start, status_end }
+      )
+      table.insert(highlights, { #lines, "ZDiffFileName", name_start, name_end })
+      table.insert(highlights, { #lines, "ZDiffAddCount", add_start, add_end })
+      table.insert(highlights, { #lines, "ZDiffRemoveCount", del_start, del_end })
 
       -- Show hunks only if expanded
       if file.expanded then

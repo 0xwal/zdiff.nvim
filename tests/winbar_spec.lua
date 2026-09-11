@@ -16,7 +16,8 @@ describe("winbar", function()
     }, icons)
 
     assert.equals(
-      "%#Directory# ~ lua/100%%/file.lua  %#DiffAdd#+12%* %#DiffDelete#-3%*",
+      " %#ZDiffIconChange#~%* %#ZDiffFileName#lua/100%%/file.lua%*  "
+        .. "%#ZDiffAddCount#+12%* %#ZDiffRemoveCount#-3%*",
       header
     )
   end)

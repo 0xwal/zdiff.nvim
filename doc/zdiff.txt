@@ -336,8 +336,31 @@ The header line is highlighted per component, so each placeholder from
     ZDiffHeaderDesc       <desc>
     ZDiffHeaderLoading    The " (loading...)" suffix.
 <
-Every component links to `ZDiffHeader` unless you define it, so styling
-`ZDiffHeader` alone restyles the whole header: >lua
+File header lines are highlighted per component too: >
+
+     ~ lua/zdiff/git.lua  +104 -0
+    ^ ^        ^            ^    ^
+    | |        |            |    ZDiffRemoveCount
+    | |        |            ZDiffAddCount
+    | |        ZDiffFileName
+    | ZDiffIconAdd / ZDiffIconDelete / ZDiffIconChange
+    ZDiffIcon
+<
+    ZDiffIcon         Expand/collapse indicator. Links to |hl-Directory|.
+    ZDiffIconAdd      Status icon of an added or untracked file.
+                      Links to |hl-DiffAdd|.
+    ZDiffIconDelete   Status icon of a deleted file. Links to
+                      |hl-DiffDelete|.
+    ZDiffIconChange   Status icon of any other file. Links to
+                      |hl-DiffChange|.
+    ZDiffFileName     File path. Links to |hl-Directory|.
+    ZDiffAddCount     The `+N` count. Links to |hl-DiffAdd|.
+    ZDiffRemoveCount  The `-N` count. Links to |hl-DiffDelete|.
+
+The same groups are used in the |winbar| of the zdiff window.
+
+Every header component links to `ZDiffHeader` unless you define it, so
+styling `ZDiffHeader` alone restyles the whole header: >lua
 
     vim.api.nvim_set_hl(0, "ZDiffHeader", { link = "Title" })
     vim.api.nvim_set_hl(0, "ZDiffHeaderBranch", { fg = "#a6e3a1", bold = true })

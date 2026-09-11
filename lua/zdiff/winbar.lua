@@ -16,11 +16,13 @@ function M.format_file(file, icons)
   local del_stat = string.format("-%d", file.deletions)
 
   return table.concat({
-    "%#Directory# ",
-    statusline_escape(status_icon .. " " .. (file.display_path or file.path)),
-    "  %#DiffAdd#",
+    " %#" .. display.get_status_hl(file.status) .. "#",
+    statusline_escape(status_icon),
+    "%* %#ZDiffFileName#",
+    statusline_escape(file.display_path or file.path),
+    "%*  %#ZDiffAddCount#",
     statusline_escape(add_stat),
-    "%* %#DiffDelete#",
+    "%* %#ZDiffRemoveCount#",
     statusline_escape(del_stat),
     "%*",
   })

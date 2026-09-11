@@ -260,6 +260,30 @@ The header is highlighted per component, one group per header placeholder:
 | `ZDiffHeaderDesc` | `<desc>` |
 | `ZDiffHeaderLoading` | ` (loading...)` suffix |
 
+File header lines:
+
+```
+  ~ lua/zdiff/git.lua  +104 -0
+ ^ ^        ^            ^    ^
+ | |        |            |    ZDiffRemoveCount
+ | |        |            ZDiffAddCount
+ | |        ZDiffFileName
+ | ZDiffIconAdd / ZDiffIconDelete / ZDiffIconChange
+ ZDiffIcon
+```
+
+| Group | Covers | Default link |
+|-------|--------|--------------|
+| `ZDiffIcon` | Expand/collapse indicator | `Directory` |
+| `ZDiffIconAdd` | Status icon, added or untracked file | `DiffAdd` |
+| `ZDiffIconDelete` | Status icon, deleted file | `DiffDelete` |
+| `ZDiffIconChange` | Status icon, any other file | `DiffChange` |
+| `ZDiffFileName` | File path | `Directory` |
+| `ZDiffAddCount` | `+N` count | `DiffAdd` |
+| `ZDiffRemoveCount` | `-N` count | `DiffDelete` |
+
+The same groups are used in the window's winbar.
+
 Each component links to `ZDiffHeader` unless you define it, so styling `ZDiffHeader` alone restyles the whole header:
 
 ```lua
