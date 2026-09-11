@@ -2058,12 +2058,13 @@ function M.open(base_ref, scope_dir, open_mode)
     end,
   })
 
-  vim.api.nvim_create_autocmd("BufLeave", {
+  -- BufWinLeave, not BufLeave: leaving the buffer for another *window* must
+  -- keep the zdiff window's options, which BufLeave would restore under us.
+  vim.api.nvim_create_autocmd("BufWinLeave", {
     group = augroup,
     buffer = state.buf,
     callback = function()
-      local win = vim.api.nvim_get_current_win()
-      restore_window_opts(win)
+      restore_window_opts(vim.api.nvim_get_current_win())
     end,
   })
 
