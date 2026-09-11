@@ -123,6 +123,8 @@ Tab completion is available for branch names, tag names and directories.
 | `<Tab>` | Toggle expand/collapse file |
 | `]f` | Jump to next file header |
 | `[f` | Jump to previous file header |
+| `]h` | Jump to next hunk, within the current file |
+| `[h` | Jump to previous hunk, within the current file |
 | `m` | Toggle between uncommitted and branch mode |
 | `R` | Refresh diff |
 | `q` | Close zdiff |
@@ -203,6 +205,8 @@ require("zdiff").setup({
     toggle_mode = "m",
     next_file = "]f",
     prev_file = "[f",
+    next_hunk = "]h",
+    prev_hunk = "[h",
     help = "?",
     yank_ref = "gy",
   },

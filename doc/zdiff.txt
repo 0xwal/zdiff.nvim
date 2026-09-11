@@ -124,6 +124,13 @@ These keymaps are available in the zdiff buffer:
     [f          Move the cursor to the previous file header. Inside an
                 expanded file, moves to that file's own header first.
 
+    ]h          Move the cursor to the next hunk of the file under the
+                cursor. Stays inside that file, and does nothing when the
+                file is collapsed or has no further hunk.
+
+    [h          Move the cursor to the previous hunk of the same file.
+                Inside a hunk, moves to that hunk's own header first.
+
     m           Toggle between uncommitted mode and branch mode.
                 In branch mode, diffs against |zdiff-config-default_branch|.
 
@@ -182,6 +189,8 @@ Call the setup function with an optional configuration table: >lua
         toggle_mode = "m",
         next_file = "]f",
         prev_file = "[f",
+        next_hunk = "]h",
+        prev_hunk = "[h",
         help = "?",
       },
 

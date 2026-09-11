@@ -38,6 +38,7 @@ local winbar = require("zdiff.winbar")
 ---@field load_error string|nil most recent file loading error
 ---@field line_map table<number, {file_idx: number, hunk_idx: number|nil, line_idx: number|nil, lnum: number|nil}>
 ---@field file_header_lines table<number, number>
+---@field hunk_lines table<number, number[]> buffer lines of each file's hunk headers
 ---@field loading_files boolean whether file list refresh is in progress
 ---@field refresh_seq number monotonically increasing refresh generation
 ---@field refresh_timer uv.uv_timer_t|nil timer used for debounced refresh
@@ -69,6 +70,7 @@ local state = {
   load_error = nil,
   line_map = {},
   file_header_lines = {},
+  hunk_lines = {},
   loading_files = false,
   refresh_seq = 0,
   refresh_timer = nil,
@@ -133,6 +135,8 @@ M.config = {
     toggle_mode = "m",
     next_file = "]f",
     prev_file = "[f",
+    next_hunk = "]h",
+    prev_hunk = "[h",
     help = "?",
     yank_ref = "gy",
   },
@@ -1035,6 +1039,7 @@ render = function()
   local markers = {} -- {line_idx, text, hl_group}
   state.line_map = {}
   state.file_header_lines = {}
+  state.hunk_lines = {}
   state.syntax_debug = {
     projected_files = {},
     fallback_files = {},
@@ -1155,6 +1160,8 @@ render = function()
             -- Keep git metadata out of buffer text; render as virtual text instead.
             table.insert(lines, "  ")
             state.line_map[#lines] = { file_idx = file_idx, hunk_idx = hunk_idx }
+            state.hunk_lines[file_idx] = state.hunk_lines[file_idx] or {}
+            table.insert(state.hunk_lines[file_idx], #lines)
             table.insert(highlights, { #lines, "Comment", 0, -1 })
             table.insert(markers, { #lines, hunk_header, "Comment" })
 
@@ -1362,6 +1369,48 @@ local function jump_file(delta)
   end
 end
 
+---Move the cursor between hunks of the file under the cursor. Stays inside
+---that file: use next_file/prev_file to leave it.
+---@param delta 1|-1
+local function jump_hunk(delta)
+  if not state.win or not vim.api.nvim_win_is_valid(state.win) then
+    return
+  end
+
+  local cursor_line = vim.api.nvim_win_get_cursor(state.win)[1]
+  local mapping = state.line_map[cursor_line]
+  local file_idx = mapping and mapping.file_idx or nil
+  if not file_idx then
+    return
+  end
+
+  local hunk_lines = state.hunk_lines[file_idx]
+  if not hunk_lines then
+    return
+  end
+
+  local target
+  if delta > 0 then
+    for _, lnum in ipairs(hunk_lines) do
+      if lnum > cursor_line then
+        target = lnum
+        break
+      end
+    end
+  else
+    for idx = #hunk_lines, 1, -1 do
+      if hunk_lines[idx] < cursor_line then
+        target = hunk_lines[idx]
+        break
+      end
+    end
+  end
+
+  if target then
+    vim.api.nvim_win_set_cursor(state.win, { target, 0 })
+  end
+end
+
 ---Toggle expand/collapse for file under cursor
 toggle_expand = function()
   if not state.win or not vim.api.nvim_win_is_valid(state.win) then
@@ -1538,6 +1587,8 @@ show_help = function()
     { "toggle", "Toggle expand/collapse" },
     { "next_file", "Jump to next file" },
     { "prev_file", "Jump to previous file" },
+    { "next_hunk", "Jump to next hunk in this file" },
+    { "prev_hunk", "Jump to previous hunk in this file" },
     { "toggle_mode", "Toggle mode (uncommitted/branch)" },
     { "refresh", "Refresh" },
     { "close", "Close zdiff" },
@@ -1901,6 +1952,18 @@ function M.open(base_ref, scope_dir, open_mode)
       "prev_file",
       function()
         jump_file(-1)
+      end,
+    },
+    {
+      "next_hunk",
+      function()
+        jump_hunk(1)
+      end,
+    },
+    {
+      "prev_hunk",
+      function()
+        jump_hunk(-1)
       end,
     },
     { "close", close },
