@@ -68,7 +68,7 @@ vim.api.nvim_create_user_command("Zdiff", function(opts)
   -- Arguments are order independent: an existing directory sets the scope,
   -- anything else is treated as a git ref.
   for _, arg in ipairs(opts.fargs) do
-    if vim.fn.isdirectory(vim.fn.expand(arg)) == 1 then
+    if vim.fn.isdirectory(vim.fs.normalize(arg)) == 1 then
       if dir then
         vim.notify("[zdiff] Only one directory argument is supported", vim.log.levels.ERROR)
         return

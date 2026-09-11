@@ -20,6 +20,7 @@ M.links = {
   ZDiffIconDelete = "DiffDelete",
   ZDiffIconChange = "DiffChange",
   ZDiffFileName = "Directory",
+  ZDiffFileExpanded = "ZDiffFileName",
   ZDiffAddCount = "DiffAdd",
   ZDiffRemoveCount = "DiffDelete",
 }

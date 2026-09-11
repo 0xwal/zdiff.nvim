@@ -40,7 +40,7 @@ local winbar = require("zdiff.winbar")
 ---@field refresh_timer uv.uv_timer_t|nil timer used for debounced refresh
 ---@field render_timer uv.uv_timer_t|nil timer used for debounced renders
 ---@field render_pending boolean whether a debounced render is queued
----@field win_opts table<number, {number: boolean, relativenumber: boolean, signcolumn: string, wrap: boolean, cursorline: boolean, winbar: string|nil}>
+---@field win_opts table<number, {number: boolean, relativenumber: boolean, signcolumn: string, wrap: boolean, cursorline: boolean, spell: boolean, winbar: string|nil}>
 ---@field hunk_job_seq integer
 ---@field syntax_projection_cache table<string, {old: table<number, table[]>, new: table<number, table[]>}|false>
 ---@field syntax_jobs table<string, integer>
@@ -186,7 +186,8 @@ end
 ---@param root string
 ---@return string|nil repo-relative path ("" when path is the root, nil when outside it)
 local function relative_to_root(path, root)
-  local abs = strip_trailing_slash(vim.fn.fnamemodify(vim.fn.expand(path), ":p"))
+  -- normalize, not expand: `%` and `#` in a directory name are not specials.
+  local abs = strip_trailing_slash(vim.fn.fnamemodify(vim.fs.normalize(path), ":p"))
   root = strip_trailing_slash(root)
   if abs == root then
     return ""
@@ -207,7 +208,7 @@ local function resolve_scope(root, scope_dir)
   end
 
   if scope_dir and scope_dir ~= "" then
-    if vim.fn.isdirectory(vim.fn.expand(scope_dir)) ~= 1 then
+    if vim.fn.isdirectory(vim.fs.normalize(scope_dir)) ~= 1 then
       return nil, "not a directory: " .. scope_dir
     end
     local rel = relative_to_root(scope_dir, root)
@@ -512,6 +513,7 @@ local function save_window_opts(win)
     signcolumn = vim.wo[win].signcolumn,
     wrap = vim.wo[win].wrap,
     cursorline = vim.wo[win].cursorline,
+    spell = vim.wo[win].spell,
     winbar = vim.wo[win].winbar,
   }
 end
@@ -526,6 +528,8 @@ local function apply_zdiff_window_opts(win)
   vim.wo[win].signcolumn = "no"
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
+  -- Paths are not prose; spell marks would fight the file name highlights.
+  vim.wo[win].spell = false
 end
 
 ---@param win number
@@ -540,6 +544,7 @@ local function restore_window_opts(win)
   vim.wo[win].signcolumn = opts.signcolumn
   vim.wo[win].wrap = opts.wrap
   vim.wo[win].cursorline = opts.cursorline
+  vim.wo[win].spell = opts.spell
   vim.wo[win].winbar = opts.winbar or ""
   state.win_opts[win] = nil
 end
@@ -1004,7 +1009,10 @@ render = function()
         highlights,
         { #lines, display.get_status_hl(file.status), status_start, status_end }
       )
-      table.insert(highlights, { #lines, "ZDiffFileName", name_start, name_end })
+      table.insert(
+        highlights,
+        { #lines, display.get_name_hl(file.expanded), name_start, name_end }
+      )
       table.insert(highlights, { #lines, "ZDiffAddCount", add_start, add_end })
       table.insert(highlights, { #lines, "ZDiffRemoveCount", del_start, del_end })
 

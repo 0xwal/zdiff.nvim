@@ -267,7 +267,7 @@ File header lines:
  ^ ^        ^            ^    ^
  | |        |            |    ZDiffRemoveCount
  | |        |            ZDiffAddCount
- | |        ZDiffFileName
+ | |        ZDiffFileName / ZDiffFileExpanded
  | ZDiffIconAdd / ZDiffIconDelete / ZDiffIconChange
  ZDiffIcon
 ```
@@ -278,7 +278,8 @@ File header lines:
 | `ZDiffIconAdd` | Status icon, added or untracked file | `DiffAdd` |
 | `ZDiffIconDelete` | Status icon, deleted file | `DiffDelete` |
 | `ZDiffIconChange` | Status icon, any other file | `DiffChange` |
-| `ZDiffFileName` | File path | `Directory` |
+| `ZDiffFileName` | File path, collapsed file | `Directory` |
+| `ZDiffFileExpanded` | File path, expanded file | `ZDiffFileName` |
 | `ZDiffAddCount` | `+N` count | `DiffAdd` |
 | `ZDiffRemoveCount` | `-N` count | `DiffDelete` |
 

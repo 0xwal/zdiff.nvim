@@ -342,7 +342,7 @@ File header lines are highlighted per component too: >
     ^ ^        ^            ^    ^
     | |        |            |    ZDiffRemoveCount
     | |        |            ZDiffAddCount
-    | |        ZDiffFileName
+    | |        ZDiffFileName / ZDiffFileExpanded
     | ZDiffIconAdd / ZDiffIconDelete / ZDiffIconChange
     ZDiffIcon
 <
@@ -353,7 +353,11 @@ File header lines are highlighted per component too: >
                       |hl-DiffDelete|.
     ZDiffIconChange   Status icon of any other file. Links to
                       |hl-DiffChange|.
-    ZDiffFileName     File path. Links to |hl-Directory|.
+    ZDiffFileName     File path of a collapsed file. Links to
+                      |hl-Directory|.
+    ZDiffFileExpanded File path of an expanded file. Links to
+                      `ZDiffFileName`, so expanded files look the same
+                      until you define it.
     ZDiffAddCount     The `+N` count. Links to |hl-DiffAdd|.
     ZDiffRemoveCount  The `-N` count. Links to |hl-DiffDelete|.
 

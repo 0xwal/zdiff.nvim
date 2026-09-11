@@ -18,7 +18,7 @@ function M.format_file(file, icons)
   return table.concat({
     " %#" .. display.get_status_hl(file.status) .. "#",
     statusline_escape(status_icon),
-    "%* %#ZDiffFileName#",
+    "%* %#" .. display.get_name_hl(file.expanded) .. "#",
     statusline_escape(file.display_path or file.path),
     "%*  %#ZDiffAddCount#",
     statusline_escape(add_stat),

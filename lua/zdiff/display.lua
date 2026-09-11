@@ -13,6 +13,12 @@ function M.get_status_icon(status, icons)
   end
 end
 
+---@param expanded boolean|nil
+---@return string highlight group for the file name
+function M.get_name_hl(expanded)
+  return expanded and "ZDiffFileExpanded" or "ZDiffFileName"
+end
+
 ---@param status string
 ---@return string highlight group for the status icon
 function M.get_status_hl(status)

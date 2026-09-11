@@ -405,7 +405,7 @@ end
 ---@param root string
 ---@param rel_path string
 ---@return string|nil
-local function open_worktree_file(root, rel_path)
+local function readable_worktree_path(root, rel_path)
   local filepath = root .. "/" .. rel_path
   -- ls-files --others reports nested repositories as directories; io.open
   -- succeeds on them and only fails later while reading.
@@ -420,7 +420,7 @@ end
 ---@param rel_path string
 ---@return {ok: boolean, data?: number, error?: string}
 function M.count_worktree_lines(root, rel_path)
-  local filepath = open_worktree_file(root, rel_path)
+  local filepath = readable_worktree_path(root, rel_path)
   local file = filepath and io.open(filepath, "r")
   if not file then
     return { ok = false, error = "could not read " .. rel_path }
@@ -438,7 +438,7 @@ end
 ---@param rel_path string
 ---@return {ok: boolean, data?: string[], error?: string}
 function M.read_worktree_lines(root, rel_path)
-  local filepath = open_worktree_file(root, rel_path)
+  local filepath = readable_worktree_path(root, rel_path)
   local file = filepath and io.open(filepath, "r")
   if not file then
     return { ok = false, error = "could not read " .. rel_path }
