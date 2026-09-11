@@ -137,6 +137,8 @@ M.config = {
     prev_file = "[f",
     next_hunk = "]h",
     prev_hunk = "[h",
+    expand_all = "zR",
+    collapse_all = "zM",
     help = "?",
     yank_ref = "gy",
   },
@@ -1438,6 +1440,39 @@ toggle_expand = function()
   end
 end
 
+---Expand or collapse every file, keeping the cursor on its file header.
+---@param expanded boolean
+local function set_all_expanded(expanded)
+  if not state.win or not vim.api.nvim_win_is_valid(state.win) then
+    return
+  end
+  if #state.files == 0 then
+    return
+  end
+
+  local cursor_line = vim.api.nvim_win_get_cursor(state.win)[1]
+  local mapping = state.line_map[cursor_line]
+  local file_idx = mapping and mapping.file_idx or nil
+
+  local changed = false
+  for _, file in ipairs(state.files) do
+    if file.expanded ~= expanded then
+      file.expanded = expanded
+      changed = true
+    end
+  end
+  if not changed then
+    return
+  end
+
+  render()
+
+  local header_line = file_idx and state.file_header_lines[file_idx] or nil
+  if header_line then
+    vim.api.nvim_win_set_cursor(state.win, { header_line, 0 })
+  end
+end
+
 ---Go to the source file at the correct line
 goto_source = function()
   local cursor_line = vim.api.nvim_win_get_cursor(state.win)[1]
@@ -1585,6 +1620,8 @@ show_help = function()
   local configured_keymaps = {
     { "goto_file", "Go to file/line" },
     { "toggle", "Toggle expand/collapse" },
+    { "expand_all", "Expand all files" },
+    { "collapse_all", "Collapse all files" },
     { "next_file", "Jump to next file" },
     { "prev_file", "Jump to previous file" },
     { "next_hunk", "Jump to next hunk in this file" },
@@ -1952,6 +1989,18 @@ function M.open(base_ref, scope_dir, open_mode)
       "prev_file",
       function()
         jump_file(-1)
+      end,
+    },
+    {
+      "expand_all",
+      function()
+        set_all_expanded(true)
+      end,
+    },
+    {
+      "collapse_all",
+      function()
+        set_all_expanded(false)
       end,
     },
     {

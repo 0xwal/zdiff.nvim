@@ -118,6 +118,11 @@ These keymaps are available in the zdiff buffer:
                 When expanded, shows the inline diff with syntax
                 highlighting.
 
+    zR          Expand all files. Each newly expanded file loads its
+                diff, so this is slow on a very large change set.
+
+    zM          Collapse all files.
+
     ]f          Move the cursor to the next file header, skipping the
                 hunks of an expanded file.
 
@@ -191,6 +196,8 @@ Call the setup function with an optional configuration table: >lua
         prev_file = "[f",
         next_hunk = "]h",
         prev_hunk = "[h",
+        expand_all = "zR",
+        collapse_all = "zM",
         help = "?",
       },
 

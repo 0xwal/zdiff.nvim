@@ -121,6 +121,8 @@ Tab completion is available for branch names, tag names and directories.
 |-----|--------|
 | `<CR>` | Go to file/line under cursor |
 | `<Tab>` | Toggle expand/collapse file |
+| `zR` | Expand all files |
+| `zM` | Collapse all files |
 | `]f` | Jump to next file header |
 | `[f` | Jump to previous file header |
 | `]h` | Jump to next hunk, within the current file |
@@ -207,6 +209,8 @@ require("zdiff").setup({
     prev_file = "[f",
     next_hunk = "]h",
     prev_hunk = "[h",
+    expand_all = "zR",
+    collapse_all = "zM",
     help = "?",
     yank_ref = "gy",
   },
