@@ -109,3 +109,9 @@ end, {
   complete = complete_zdiff,
   desc = "Open zdiff (optionally against a git ref, a directory and/or an open mode)",
 })
+
+vim.api.nvim_create_user_command("ZdiffFocus", function()
+  require("zdiff").focus()
+end, {
+  desc = "Show the current zdiff session again",
+})

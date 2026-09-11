@@ -129,6 +129,8 @@ M.config = {
     close = "q",
     refresh = "R",
     toggle_mode = "m",
+    next_file = "]f",
+    prev_file = "[f",
     help = "?",
     yank_ref = "gy",
   },
@@ -602,6 +604,34 @@ local function release_window()
       vim.cmd("enew")
     end)
   end
+end
+
+---Show the existing zdiff buffer, reusing the tab it owns.
+---@param mode "replace"|"borrow"|"tab"
+local function show_buffer(mode)
+  local win
+  local own_tab = state.own_tab
+  local has_tab = mode == "tab" and own_tab and vim.api.nvim_tabpage_is_valid(own_tab)
+
+  if has_tab then
+    vim.api.nvim_set_current_tabpage(own_tab)
+    for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(own_tab)) do
+      if vim.api.nvim_win_get_buf(candidate) == state.buf then
+        win = candidate
+        break
+      end
+    end
+    win = win or vim.api.nvim_get_current_win()
+    vim.api.nvim_set_current_win(win)
+  else
+    win = acquire_window(mode)
+  end
+
+  state.win = win
+  vim.api.nvim_win_set_buf(win, state.buf)
+  save_window_opts(win)
+  apply_zdiff_window_opts(win)
+  update_winbar(win)
 end
 
 ---@param win number
@@ -1297,6 +1327,39 @@ render = function()
   end
 end
 
+---Move the cursor to the next or previous file header.
+---@param delta 1|-1
+local function jump_file(delta)
+  if not state.win or not vim.api.nvim_win_is_valid(state.win) then
+    return
+  end
+  if #state.files == 0 then
+    return
+  end
+
+  local cursor_line = vim.api.nvim_win_get_cursor(state.win)[1]
+  local mapping = state.line_map[cursor_line]
+  local current = mapping and mapping.file_idx or nil
+
+  local header_line = current and state.file_header_lines[current] or nil
+  local inside_file = header_line ~= nil and cursor_line > header_line
+
+  local target
+  if not current then
+    target = delta > 0 and 1 or #state.files
+  elseif delta < 0 and inside_file then
+    -- Inside an expanded file: go to its own header first.
+    target = current
+  else
+    target = current + delta
+  end
+
+  local target_line = state.file_header_lines[target]
+  if target_line then
+    vim.api.nvim_win_set_cursor(state.win, { target_line, 0 })
+  end
+end
+
 ---Toggle expand/collapse for file under cursor
 toggle_expand = function()
   if not state.win or not vim.api.nvim_win_is_valid(state.win) then
@@ -1471,6 +1534,8 @@ show_help = function()
   local configured_keymaps = {
     { "goto_file", "Go to file/line" },
     { "toggle", "Toggle expand/collapse" },
+    { "next_file", "Jump to next file" },
+    { "prev_file", "Jump to previous file" },
     { "toggle_mode", "Toggle mode (uncommitted/branch)" },
     { "refresh", "Refresh" },
     { "close", "Close zdiff" },
@@ -1781,18 +1846,7 @@ function M.open(base_ref, scope_dir, open_mode)
       and state.scope == scope
       and state.open_mode == mode
     then
-      -- Same session: focus the tab it owns, or take the current window.
-      local own_tab = state.own_tab
-      if mode == "tab" and own_tab and vim.api.nvim_tabpage_is_valid(own_tab) then
-        vim.api.nvim_set_current_tabpage(own_tab)
-        state.win = vim.api.nvim_get_current_win()
-      else
-        state.win = acquire_window(mode)
-      end
-      vim.api.nvim_win_set_buf(state.win, state.buf)
-      save_window_opts(state.win)
-      apply_zdiff_window_opts(state.win)
-      update_winbar(state.win)
+      show_buffer(mode)
       return
     else
       -- Different ref or open mode, close and reopen
@@ -1831,6 +1885,18 @@ function M.open(base_ref, scope_dir, open_mode)
   local mappings = {
     { "goto_file", goto_source },
     { "toggle", toggle_expand },
+    {
+      "next_file",
+      function()
+        jump_file(1)
+      end,
+    },
+    {
+      "prev_file",
+      function()
+        jump_file(-1)
+      end,
+    },
     { "close", close },
     { "refresh", refresh },
     { "toggle_mode", toggle_mode },
@@ -1902,6 +1968,16 @@ function M.open(base_ref, scope_dir, open_mode)
 
   -- Load and render
   refresh()
+end
+
+---Show the current zdiff session again, without re-resolving the repository.
+---Opens a new session when there is none.
+function M.focus()
+  if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
+    M.open()
+    return
+  end
+  show_buffer(state.open_mode or "replace")
 end
 
 ---Setup function

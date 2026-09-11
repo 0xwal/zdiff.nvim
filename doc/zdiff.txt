@@ -82,6 +82,19 @@ Run `:checkhealth zdiff` to verify your setup.
     Tab completion is available for branch names, tag names,
     directories and open modes.
 
+                                                                 *:ZdiffFocus*
+:ZdiffFocus
+    Show the current zdiff session again, in the window you are in (or,
+    in `tab` mode, in the tab it owns). Useful after opening a file with
+    <CR>: it returns you to the file list without re-running git, and
+    keeps the expanded files and the cursor position.
+
+    Opens a new session, as if `:Zdiff` had been used, when none exists.
+
+    Map it to whatever you like: >lua
+
+        vim.keymap.set("n", "<leader>gd", require("zdiff").focus)
+<
 ==============================================================================
 4. KEYMAPS                                                     *zdiff-keymaps*
 
@@ -93,6 +106,12 @@ These keymaps are available in the zdiff buffer:
     <Tab>       Toggle expand/collapse for the file under cursor.
                 When expanded, shows the inline diff with syntax
                 highlighting.
+
+    ]f          Move the cursor to the next file header, skipping the
+                hunks of an expanded file.
+
+    [f          Move the cursor to the previous file header. Inside an
+                expanded file, moves to that file's own header first.
 
     m           Toggle between uncommitted mode and branch mode.
                 In branch mode, diffs against |zdiff-config-default_branch|.
@@ -147,6 +166,8 @@ Call the setup function with an optional configuration table: >lua
         close = "q",
         refresh = "R",
         toggle_mode = "m",
+        next_file = "]f",
+        prev_file = "[f",
         help = "?",
       },
 
@@ -413,6 +434,10 @@ them, and they are reapplied on |ColorScheme|.
 zdiff.setup({opts})
     Initialize zdiff with the given options. See |zdiff-configuration|.
     This is optional - zdiff works without calling setup().
+
+                                                               *zdiff.focus()*
+zdiff.focus()
+    Show the current zdiff session again. See |:ZdiffFocus|.
 
                                                                 *zdiff.open()*
 zdiff.open({ref}, {dir}, {mode})

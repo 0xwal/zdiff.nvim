@@ -106,6 +106,7 @@ vim.keymap.set("n", "<leader>zD", function() require("zdiff").open("main") end, 
 | `:Zdiff main lua` | Changes vs `main` under `lua/` (same as `:Zdiff lua main`) |
 | `:Zdiff tab` | Uncommitted changes in a new tab page |
 | `:Zdiff main lua tab` | All three at once |
+| `:ZdiffFocus` | Return to the current session (e.g. after `<CR>` opened a file) |
 
 Arguments are order independent: an argument naming an existing directory sets the scope, `replace`/`borrow`/`tab` set the open mode (see `open_mode`), anything else is treated as a git ref.
 
@@ -119,6 +120,8 @@ Tab completion is available for branch names, tag names and directories.
 |-----|--------|
 | `<CR>` | Go to file/line under cursor |
 | `<Tab>` | Toggle expand/collapse file |
+| `]f` | Jump to next file header |
+| `[f` | Jump to previous file header |
 | `m` | Toggle between uncommitted and branch mode |
 | `R` | Refresh diff |
 | `q` | Close zdiff |
@@ -191,6 +194,8 @@ require("zdiff").setup({
     close = "q",
     refresh = "R",
     toggle_mode = "m",
+    next_file = "]f",
+    prev_file = "[f",
     help = "?",
     yank_ref = "gy",
   },
