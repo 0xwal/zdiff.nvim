@@ -299,10 +299,24 @@ end
 
 ---@param root string
 ---@param rel_path string
+---@return string|nil
+local function open_worktree_file(root, rel_path)
+  local filepath = root .. "/" .. rel_path
+  -- ls-files --others reports nested repositories as directories; io.open
+  -- succeeds on them and only fails later while reading.
+  local stat = (vim.uv or vim.loop).fs_stat(filepath)
+  if not stat or stat.type ~= "file" then
+    return nil
+  end
+  return filepath
+end
+
+---@param root string
+---@param rel_path string
 ---@return {ok: boolean, data?: number, error?: string}
 function M.count_worktree_lines(root, rel_path)
-  local filepath = root .. "/" .. rel_path
-  local file = io.open(filepath, "r")
+  local filepath = open_worktree_file(root, rel_path)
+  local file = filepath and io.open(filepath, "r")
   if not file then
     return { ok = false, error = "could not read " .. rel_path }
   end
@@ -319,8 +333,8 @@ end
 ---@param rel_path string
 ---@return {ok: boolean, data?: string[], error?: string}
 function M.read_worktree_lines(root, rel_path)
-  local filepath = root .. "/" .. rel_path
-  local file = io.open(filepath, "r")
+  local filepath = open_worktree_file(root, rel_path)
+  local file = filepath and io.open(filepath, "r")
   if not file then
     return { ok = false, error = "could not read " .. rel_path }
   end
@@ -418,13 +432,30 @@ function M.file_diff_lines_async(root, base_ref, file, done)
   end)
 end
 
+---@param args string[]
+---@param scope string|nil repo-relative directory to limit the diff to
+---@return string[]
+local function with_scope(args, scope)
+  if scope and scope ~= "" then
+    table.insert(args, "--")
+    table.insert(args, scope)
+  end
+  return args
+end
+
 ---@param root string
 ---@param base_ref string|nil
+---@param scope string|nil repo-relative directory to limit the listing to (nil = whole repo)
 ---@param done fun(result: {ok: boolean, data?: ZdiffGitFile[], error?: string})
-function M.diff_files_async(root, base_ref, done)
+function M.diff_files_async(root, base_ref, scope, done)
+  if type(scope) == "function" then
+    scope, done = nil, scope
+  end
+
   local target = diff_target(root, base_ref)
   local numstat_args = { "diff", "-z", "--numstat" }
   vim.list_extend(numstat_args, target)
+  with_scope(numstat_args, scope)
 
   M.run_async(root, numstat_args, function(numstat_result)
     if not numstat_result.ok then
@@ -434,6 +465,7 @@ function M.diff_files_async(root, base_ref, done)
 
     local status_args = { "diff", "-z", "--name-status" }
     vim.list_extend(status_args, target)
+    with_scope(status_args, scope)
 
     M.run_async(root, status_args, function(status_result)
       if not status_result.ok then
@@ -485,7 +517,7 @@ function M.diff_files_async(root, base_ref, done)
 
       M.run_async(
         root,
-        { "ls-files", "-z", "--others", "--exclude-standard" },
+        with_scope({ "ls-files", "-z", "--others", "--exclude-standard" }, scope),
         function(untracked_result)
           if not untracked_result.ok then
             done({ ok = false, error = untracked_result.error })

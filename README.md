@@ -95,14 +95,21 @@ vim.keymap.set("n", "<leader>zD", function() require("zdiff").open("main") end, 
 
 | Example | Description |
 |---------|-------------|
-| `:Zdiff` | Uncommitted changes (diff vs HEAD) |
+| `:Zdiff` | Uncommitted changes (diff vs HEAD) below the current directory |
+| `:Zdiff!` | Uncommitted changes in the whole repository |
 | `:Zdiff main` | Changes compared to `main` branch |
 | `:Zdiff develop` | Changes compared to `develop` branch |
 | `:Zdiff v1.0.0` | Changes compared to tag `v1.0.0` |
 | `:Zdiff HEAD~5` | Changes compared to 5 commits ago |
 | `:Zdiff origin/feature` | Changes compared to remote branch |
+| `:Zdiff lua` | Uncommitted changes under `lua/` |
+| `:Zdiff main lua` | Changes vs `main` under `lua/` (same as `:Zdiff lua main`) |
 
-Tab completion is available for branch and tag names.
+Arguments are order independent: an argument naming an existing directory sets the scope, anything else is treated as a git ref.
+
+By default the listing is limited to the current working directory, so opening Neovim in a subdirectory of a large repository does not show changes in sibling directories. Set `scope = "root"` to list the whole repository instead.
+
+Tab completion is available for branch names, tag names and directories.
 
 ### Keymaps (in zdiff buffer)
 
@@ -129,6 +136,19 @@ require("zdiff").setup({
 
   -- Default branch for toggle_mode (m key)
   default_branch = "main",
+
+  -- Which changes are listed when no directory argument is given:
+  -- "cwd" limits the listing to the current working directory,
+  -- "root" lists the whole repository.
+  scope = "cwd",
+
+  -- Paths shown in the file list and winbar:
+  -- "root" keeps them relative to the repository root (w/y/z/a.lua),
+  -- "scope" strips the active scope prefix (a.lua).
+  path_display = "root",
+
+  -- Paths written by yank_ref (gy): "root" or "scope", as above.
+  yank_path = "root",
 
   -- Keymap bindings (defaults)
   keymaps = {

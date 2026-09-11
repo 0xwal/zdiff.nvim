@@ -30,9 +30,9 @@ local function commit_all(repo, message)
   run_git(repo, { "commit", "-m", message })
 end
 
-local function diff_files(repo, base_ref)
+local function diff_files(repo, base_ref, scope)
   local result = nil
-  git.diff_files_async(repo, base_ref, function(res)
+  git.diff_files_async(repo, base_ref, scope, function(res)
     result = res
   end)
 

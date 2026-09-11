@@ -51,12 +51,45 @@ local function complete_git_refs(arg_lead, _, _)
   return refs
 end
 
+-- Directory + git ref completion
+local function complete_zdiff(arg_lead, cmd_line, cursor_pos)
+  local candidates = complete_git_refs(arg_lead, cmd_line, cursor_pos)
+  vim.list_extend(candidates, vim.fn.getcompletion(arg_lead, "dir"))
+  return candidates
+end
+
 -- Create user command
 vim.api.nvim_create_user_command("Zdiff", function(opts)
-  local ref = opts.args ~= "" and opts.args or nil
-  require("zdiff").open(ref)
+  local ref = nil
+  local dir = nil
+
+  -- Arguments are order independent: an existing directory sets the scope,
+  -- anything else is treated as a git ref.
+  for _, arg in ipairs(opts.fargs) do
+    if vim.fn.isdirectory(vim.fn.expand(arg)) == 1 then
+      if dir then
+        vim.notify("[zdiff] Only one directory argument is supported", vim.log.levels.ERROR)
+        return
+      end
+      dir = arg
+    else
+      if ref then
+        vim.notify("[zdiff] Only one git ref argument is supported", vim.log.levels.ERROR)
+        return
+      end
+      ref = arg
+    end
+  end
+
+  -- `:Zdiff!` widens back to the whole repository regardless of the scope config.
+  if not dir and opts.bang then
+    dir = false
+  end
+
+  require("zdiff").open(ref, dir)
 end, {
-  nargs = "?",
-  complete = complete_git_refs,
-  desc = "Open zdiff (optionally against a git ref)",
+  nargs = "*",
+  bang = true,
+  complete = complete_zdiff,
+  desc = "Open zdiff (optionally against a git ref and/or limited to a directory)",
 })

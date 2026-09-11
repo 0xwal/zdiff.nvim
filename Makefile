@@ -1,4 +1,4 @@
-.PHONY: test test-file stress-test syntax-gallery syntax-gallery-clean format lint
+.PHONY: test test-file stress-test syntax-gallery syntax-gallery-clean format lint docs
 
 test:
 	nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua', sequential = true}"
@@ -15,6 +15,9 @@ syntax-gallery:
 
 syntax-gallery-clean:
 	nvim -u tests/minimal_init.lua -c "lua require('tests.syntax_gallery').open()"
+
+docs:
+	nvim --headless -c "helptags doc" -c "qa!"
 
 format:
 	stylua lua/ plugin/ tests/

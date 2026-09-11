@@ -45,21 +45,33 @@ Run `:checkhealth zdiff` to verify your setup.
 3. COMMANDS                                                   *zdiff-commands*
 
                                                                       *:Zdiff*
-:Zdiff [ref]
+:Zdiff[!] [ref] [dir]
     Open zdiff to view changes.
 
-    Without arguments, shows uncommitted changes (diff against HEAD).
+    Without arguments, shows uncommitted changes (diff against HEAD),
+    limited to the current directory (see |zdiff-config-scope|).
     With a git ref argument, shows changes between that ref and HEAD.
+    With a directory argument, limits the listing to that directory.
+
+    Arguments are order independent: an argument that names an existing
+    directory sets the scope, any other argument is treated as a git ref.
+    With [!], the whole repository is listed regardless of
+    |zdiff-config-scope|.
 
     Examples: >
-        :Zdiff              " Uncommitted changes
+        :Zdiff              " Uncommitted changes below the cwd
+        :Zdiff!             " Uncommitted changes in the whole repo
         :Zdiff main         " Changes vs main branch
-        :Zdiff develop      " Changes vs develop branch  
+        :Zdiff develop      " Changes vs develop branch
         :Zdiff v1.0.0       " Changes vs tag v1.0.0
         :Zdiff HEAD~5       " Changes vs 5 commits ago
         :Zdiff origin/feat  " Changes vs remote branch
+        :Zdiff lua          " Uncommitted changes under lua/
+        :Zdiff main lua     " Changes vs main under lua/
+        :Zdiff lua main     " Same, order does not matter
 <
-    Tab completion is available for branch and tag names.
+    Tab completion is available for branch names, tag names and
+    directories.
 
 ==============================================================================
 4. KEYMAPS                                                     *zdiff-keymaps*
@@ -96,6 +108,15 @@ Call the setup function with an optional configuration table: >lua
 
       -- Default branch for toggle_mode (m key)
       default_branch = "main",
+
+      -- Default listing scope: "cwd" or "root"
+      scope = "cwd",
+
+      -- Paths shown in the list and winbar: "root" or "scope"
+      path_display = "root",
+
+      -- Paths written by yank_ref (gy): "root" or "scope"
+      yank_path = "root",
 
       -- Keymap bindings
       keymaps = {
@@ -134,6 +155,42 @@ default_branch ~
     This allows quick switching between uncommitted changes and
     branch comparison without typing the branch name.
 
+                                                          *zdiff-config-scope*
+scope ~
+    Type: `"cwd"|"root"`
+    Default: `"cwd"`
+
+    Which part of the repository is listed when no directory argument is
+    given. With `"cwd"`, only changes below the current working directory
+    are listed, so opening Neovim in a subdirectory of a large repository
+    hides changes in sibling directories. With `"root"`, the whole
+    repository is listed.
+
+    `:Zdiff!` lists the whole repository for one invocation.
+
+                                                   *zdiff-config-path_display*
+path_display ~
+    Type: `"root"|"scope"`
+    Default: `"root"`
+
+    How file paths are labelled in the file list and the winbar. With
+    `"root"`, paths stay relative to the repository root
+    (`w/y/z/a.lua`). With `"scope"`, the active scope prefix is stripped
+    (`a.lua`), which is shorter but no longer matches the paths git
+    prints.
+
+    Only the labels change; |zdiff-keymaps| `<CR>` always opens the
+    correct file.
+
+                                                     *zdiff-config-yank_path*
+yank_path ~
+    Type: `"root"|"scope"`
+    Default: `"root"`
+
+    Whether the reference yanked by `gy` uses the repository-root path or
+    the path relative to the active scope. Independent of
+    |zdiff-config-path_display|.
+
                                                         *zdiff-config-keymaps*
 keymaps ~
     Type: `table`
@@ -155,16 +212,21 @@ zdiff.setup({opts})
     This is optional - zdiff works without calling setup().
 
                                                                 *zdiff.open()*
-zdiff.open({ref})
+zdiff.open({ref}, {dir})
     Open zdiff with the specified git ref.
     Parameters:
         {ref}   Git ref to diff against (e.g., "main", "v1.0.0").
                 If `nil` or omitted, shows uncommitted changes.
+        {dir}   Directory to limit the listing to. If `nil` or omitted,
+                |zdiff-config-scope| decides. `false` forces the whole
+                repository.
 
     Examples: >lua
         require("zdiff").open()           -- Uncommitted changes
         require("zdiff").open("main")     -- Changes vs main
         require("zdiff").open("HEAD~3")   -- Changes vs 3 commits ago
+        require("zdiff").open(nil, "lua") -- Uncommitted changes in lua/
+        require("zdiff").open(nil, false) -- Whole repository
 <
 
 ==============================================================================

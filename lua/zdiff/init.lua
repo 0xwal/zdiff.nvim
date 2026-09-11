@@ -26,6 +26,7 @@ local winbar = require("zdiff.winbar")
 ---@field win number|nil window handle
 ---@field root string|nil git repository root for the current zdiff session
 ---@field base_ref string|nil the git ref to diff against (nil = uncommitted changes vs HEAD)
+---@field scope string|nil repo-relative directory the listing is limited to (nil = whole repo)
 ---@field load_error string|nil most recent file loading error
 ---@field line_map table<number, {file_idx: number, hunk_idx: number|nil, line_idx: number|nil, lnum: number|nil}>
 ---@field file_header_lines table<number, number>
@@ -49,6 +50,7 @@ local state = {
   win = nil,
   root = nil,
   base_ref = nil,
+  scope = nil,
   load_error = nil,
   line_map = {},
   file_header_lines = {},
@@ -82,6 +84,9 @@ local update_winbar
 ---@class ZdiffConfig
 ---@field default_expanded boolean Whether files are expanded by default
 ---@field default_branch string|nil Default branch for toggle_mode (e.g., "main", "develop")
+---@field scope "cwd"|"root" Default listing scope: cwd subtree, or the whole repository
+---@field path_display "root"|"scope" Paths shown in the list and winbar
+---@field yank_path "root"|"scope" Paths written by yank_ref
 ---@field keymaps table<string, string|false|nil> Keymap bindings
 ---@field icons table<string, string> Icons for UI elements
 ---@field syntax table Syntax highlight preferences
@@ -90,6 +95,9 @@ local update_winbar
 M.config = {
   default_expanded = false,
   default_branch = "main",
+  scope = "cwd",
+  path_display = "root",
+  yank_path = "root",
   keymaps = {
     goto_file = "<CR>",
     toggle = "<Tab>",
@@ -147,6 +155,88 @@ local function normalize_enum(value, allowed, fallback)
     return value
   end
   return fallback
+end
+
+---@param path string
+---@return string
+local function strip_trailing_slash(path)
+  local stripped = path:gsub("/+$", "")
+  return stripped
+end
+
+---Resolve a path against the repository root.
+---@param path string
+---@param root string
+---@return string|nil repo-relative path ("" when path is the root, nil when outside it)
+local function relative_to_root(path, root)
+  local abs = strip_trailing_slash(vim.fn.fnamemodify(vim.fn.expand(path), ":p"))
+  root = strip_trailing_slash(root)
+  if abs == root then
+    return ""
+  end
+  if abs:sub(1, #root + 1) == root .. "/" then
+    return abs:sub(#root + 2)
+  end
+  return nil
+end
+
+---@param root string
+---@param scope_dir string|false|nil explicit directory argument (false forces the whole repo)
+---@return string|nil scope repo-relative directory, nil for the whole repo
+---@return string|nil error
+local function resolve_scope(root, scope_dir)
+  if scope_dir == false then
+    return nil, nil
+  end
+
+  if scope_dir and scope_dir ~= "" then
+    if vim.fn.isdirectory(vim.fn.expand(scope_dir)) ~= 1 then
+      return nil, "not a directory: " .. scope_dir
+    end
+    local rel = relative_to_root(scope_dir, root)
+    if not rel then
+      return nil, "directory is outside the repository: " .. scope_dir
+    end
+    return rel ~= "" and rel or nil, nil
+  end
+
+  if normalize_enum(M.config.scope, { cwd = true, root = true }, "cwd") ~= "cwd" then
+    return nil, nil
+  end
+
+  local rel = relative_to_root(vim.fn.getcwd(), root)
+  return (rel and rel ~= "") and rel or nil, nil
+end
+
+---Strip the active scope prefix from a path for display or yanking.
+---@param path string|nil
+---@return string|nil
+local function strip_scope(path)
+  if not path or not state.scope then
+    return path
+  end
+  local prefix = state.scope .. "/"
+  if path:sub(1, #prefix) == prefix then
+    return path:sub(#prefix + 1)
+  end
+  return path
+end
+
+---@param display_path string|nil
+---@return string|nil
+local function scoped_display_path(display_path)
+  if not display_path or not state.scope then
+    return display_path
+  end
+  if normalize_enum(M.config.path_display, { root = true, scope = true }, "root") ~= "scope" then
+    return display_path
+  end
+  -- Renames are rendered as "old -> new"; strip both sides.
+  local old_path, new_path = display_path:match("^(.-) %-> (.+)$")
+  if old_path then
+    return strip_scope(old_path) .. " -> " .. strip_scope(new_path)
+  end
+  return strip_scope(display_path)
 end
 
 ---@param value any
@@ -596,6 +686,9 @@ render = function()
   else
     mode_text = "Uncommitted changes"
   end
+  if state.scope then
+    mode_text = mode_text .. " in " .. state.scope .. "/"
+  end
   if state.loading_files then
     mode_text = mode_text .. " (loading...)"
   end
@@ -1008,7 +1101,12 @@ local function yank_ref(start_line, end_line)
     end
   end
 
-  local ref = file.path .. ":" .. table.concat(parts, ", ")
+  local ref_path = file.path
+  if normalize_enum(M.config.yank_path, { root = true, scope = true }, "root") == "scope" then
+    ref_path = strip_scope(ref_path)
+  end
+
+  local ref = ref_path .. ":" .. table.concat(parts, ", ")
   vim.fn.setreg('"', ref)
   vim.fn.setreg("+", ref)
   notify("Yanked: " .. ref)
@@ -1161,7 +1259,7 @@ local function refresh()
     return
   end
 
-  git.diff_files_async(state.root, state.base_ref, function(result)
+  git.diff_files_async(state.root, state.base_ref, state.scope, function(result)
     if refresh_seq ~= state.refresh_seq then
       return
     end
@@ -1178,7 +1276,7 @@ local function refresh()
     for _, info in ipairs(result.data or {}) do
       table.insert(files, {
         path = info.path,
-        display_path = info.display_path,
+        display_path = scoped_display_path(info.display_path),
         old_path = info.old_path,
         new_path = info.new_path,
         status = info.status,
@@ -1287,7 +1385,8 @@ end
 
 ---Create the zdiff buffer and window
 ---@param base_ref? string git ref to diff against (e.g., "main", "develop", "HEAD~3"). If nil, shows uncommitted changes.
-function M.open(base_ref)
+---@param scope_dir? string|false directory to limit the listing to. nil uses the `scope` config, false forces the whole repository.
+function M.open(base_ref, scope_dir)
   -- Check if we're in a git repo
   local root_result = git.root()
   if not root_result.ok then
@@ -1307,9 +1406,15 @@ function M.open(base_ref)
     base_ref = nil
   end
 
+  local scope, scope_err = resolve_scope(root, scope_dir)
+  if scope_err then
+    notify(scope_err, vim.log.levels.ERROR)
+    return
+  end
+
   -- If zdiff buffer already exists and we're switching refs, close it first
   if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-    if state.root == root and state.base_ref == base_ref then
+    if state.root == root and state.base_ref == base_ref and state.scope == scope then
       -- Same ref, just switch to the buffer
       state.win = vim.api.nvim_get_current_win()
       vim.api.nvim_win_set_buf(state.win, state.buf)
@@ -1325,6 +1430,7 @@ function M.open(base_ref)
 
   state.root = root
   state.base_ref = base_ref
+  state.scope = scope
   state.load_error = nil
 
   -- Create buffer
