@@ -69,13 +69,20 @@ function M.run_lines(root, args)
   return { ok = true, data = lines }
 end
 
----@param root string
----@param args string[]
+---Run an arbitrary command, not necessarily git.
+---@param cwd string
+---@param argv string[]
 ---@param callback fun(result: ZdiffGitResult)
-function M.run_async(root, args, callback)
-  local argv = git_argv(root, args)
+function M.run_argv_async(cwd, argv, callback)
+  if vim.fn.executable(argv[1]) ~= 1 then
+    vim.schedule(function()
+      callback(build_result(argv, 1, "", argv[1] .. " is not executable"))
+    end)
+    return
+  end
+
   if vim.system then
-    vim.system(argv, { text = true }, function(obj)
+    vim.system(argv, { text = true, cwd = cwd }, function(obj)
       vim.schedule(function()
         callback(build_result(argv, obj.code or 1, obj.stdout, obj.stderr))
       end)
@@ -86,6 +93,7 @@ function M.run_async(root, args, callback)
   local stdout = ""
   local stderr = ""
   local job_id = vim.fn.jobstart(argv, {
+    cwd = cwd,
     stdout_buffered = true,
     stderr_buffered = true,
     on_stdout = function(_, data)
@@ -103,9 +111,106 @@ function M.run_async(root, args, callback)
 
   if job_id <= 0 then
     vim.schedule(function()
-      callback(build_result(argv, 1, "", "failed to start git command"))
+      callback(build_result(argv, 1, "", "failed to start command"))
     end)
   end
+end
+
+---@param root string
+---@param args string[]
+---@param callback fun(result: ZdiffGitResult)
+function M.run_async(root, args, callback)
+  M.run_argv_async(root, git_argv(root, args), callback)
+end
+
+---@param stdout string
+---@return string|nil
+local function first_line(stdout)
+  local line = vim.trim(vim.split(stdout, "\n", { plain = true })[1] or "")
+  if line == "" then
+    return nil
+  end
+  return line
+end
+
+-- jj renamed `branches` to `bookmarks`; try both before falling back to the
+-- change id. Each template prints the label and the description on separate
+-- lines. --ignore-working-copy keeps the lookup free of side effects.
+local jj_templates = {
+  'if(bookmarks, bookmarks.join(","), change_id.shortest(8))',
+  'if(branches, branches.join(","), change_id.shortest(8))',
+  "change_id.shortest(8)",
+}
+
+---@param root string
+---@param index number
+---@param done fun(label: string|nil, desc: string|nil)
+local function jj_label_async(root, index, done)
+  local label_template = jj_templates[index]
+  if not label_template then
+    done(nil, nil)
+    return
+  end
+
+  local template = label_template .. ' ++ "\\n" ++ description.first_line()'
+  local argv =
+    { "jj", "log", "--no-graph", "--ignore-working-copy", "-r", "@", "-T", template }
+  M.run_argv_async(root, argv, function(result)
+    if result.ok then
+      local out = vim.split(result.stdout, "\n", { plain = true })
+      local label = vim.trim(out[1] or "")
+      if label ~= "" then
+        done(label, vim.trim(out[2] or ""))
+        return
+      end
+    end
+    jj_label_async(root, index + 1, done)
+  end)
+end
+
+---Decide which VCS the header is rendered for. A colocated repository has
+---both `.jj` and `.git`, so `priority` breaks the tie.
+---@param root string
+---@param priority "git"|"jj"
+---@return "git"|"jj"
+function M.detect_vcs(root, priority)
+  if vim.fn.isdirectory(root .. "/.jj") ~= 1 then
+    return "git"
+  end
+  local has_git = vim.fn.isdirectory(root .. "/.git") == 1
+    or vim.fn.filereadable(root .. "/.git") == 1
+  if not has_git then
+    return "jj"
+  end
+  return priority == "jj" and "jj" or "git"
+end
+
+---Resolve the label shown for the current head: the git branch, or the jj
+---bookmarks (change id when no bookmark points at `@`). The description is
+---only reported for jj.
+---@param root string
+---@param vcs "git"|"jj"
+---@param done fun(label: string|nil, desc: string|nil)
+function M.head_label_async(root, vcs, done)
+  if vcs == "jj" then
+    jj_label_async(root, 1, done)
+    return
+  end
+
+  M.run_async(root, { "symbolic-ref", "--quiet", "--short", "HEAD" }, function(result)
+    if result.ok then
+      local label = first_line(result.stdout)
+      if label then
+        done(label, nil)
+        return
+      end
+    end
+
+    -- Detached HEAD, or a ref that cannot be named.
+    M.run_async(root, { "rev-parse", "--short", "HEAD" }, function(rev_result)
+      done(rev_result.ok and first_line(rev_result.stdout) or nil, nil)
+    end)
+  end)
 end
 
 ---@return {ok: boolean, data?: string, error?: string}

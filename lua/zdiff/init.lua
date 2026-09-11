@@ -2,6 +2,7 @@ local M = {}
 local diff = require("zdiff.diff")
 local display = require("zdiff.display")
 local git = require("zdiff.git")
+local highlight = require("zdiff.highlight")
 local syntax = require("zdiff.syntax")
 local winbar = require("zdiff.winbar")
 
@@ -27,6 +28,10 @@ local winbar = require("zdiff.winbar")
 ---@field root string|nil git repository root for the current zdiff session
 ---@field base_ref string|nil the git ref to diff against (nil = uncommitted changes vs HEAD)
 ---@field scope string|nil repo-relative directory the listing is limited to (nil = whole repo)
+---@field vcs "git"|"jj"|nil repository kind the header template is resolved for
+---@field head_label string|nil git branch, or jj bookmarks/change id, shown in the header
+---@field head_desc string|nil jj description of `@`, shown by the <desc> placeholder
+---@field head_seq number monotonically increasing head lookup generation
 ---@field load_error string|nil most recent file loading error
 ---@field line_map table<number, {file_idx: number, hunk_idx: number|nil, line_idx: number|nil, lnum: number|nil}>
 ---@field file_header_lines table<number, number>
@@ -51,6 +56,10 @@ local state = {
   root = nil,
   base_ref = nil,
   scope = nil,
+  vcs = nil,
+  head_label = nil,
+  head_desc = nil,
+  head_seq = 0,
   load_error = nil,
   line_map = {},
   file_header_lines = {},
@@ -84,6 +93,10 @@ local update_winbar
 ---@class ZdiffConfig
 ---@field default_expanded boolean Whether files are expanded by default
 ---@field default_branch string|nil Default branch for toggle_mode (e.g., "main", "develop")
+---@field header string Header line template, see zdiff-config-header
+---@field git_header string|nil Header template used in git repositories
+---@field jj_header string|nil Header template used in jj repositories
+---@field header_priority "git"|"jj" Which template wins in a colocated repository
 ---@field scope "cwd"|"root" Default listing scope: cwd subtree, or the whole repository
 ---@field path_display "root"|"scope" Paths shown in the list and winbar
 ---@field yank_path "root"|"scope" Paths written by yank_ref
@@ -95,6 +108,10 @@ local update_winbar
 M.config = {
   default_expanded = false,
   default_branch = "main",
+  header = "diffs(<branch>): <path>",
+  git_header = nil,
+  jj_header = nil,
+  header_priority = "git",
   scope = "cwd",
   path_display = "root",
   yank_path = "root",
@@ -220,6 +237,242 @@ local function strip_scope(path)
     return path:sub(#prefix + 1)
   end
   return path
+end
+
+local DEFAULT_HEADER = "diffs(<branch>): <path>"
+
+local SHARED_PLACEHOLDERS = {
+  branch = true,
+  path = true,
+  scope = true,
+  root = true,
+  ref = true,
+  mode = true,
+}
+
+-- `<desc>` needs a jj commit description, so it is only valid in jj_header.
+local JJ_PLACEHOLDERS = { desc = true }
+
+---@param vcs "git"|"jj"
+---@return table<string, boolean>
+local function allowed_placeholders(vcs)
+  local allowed = vim.tbl_extend("force", {}, SHARED_PLACEHOLDERS)
+  if vcs == "jj" then
+    allowed = vim.tbl_extend("force", allowed, JJ_PLACEHOLDERS)
+  end
+  return allowed
+end
+
+---@param allowed table<string, boolean>
+---@return string
+local function placeholder_list(allowed)
+  local names = {}
+  for name in pairs(allowed) do
+    table.insert(names, "<" .. name .. ">")
+  end
+  table.sort(names)
+  return table.concat(names, ", ")
+end
+
+---Split a placeholder body into its literal affixes and the value name.
+---`"desc"` in `<"desc">` yields `"`, `desc`, `"`.
+---@param body string placeholder text between the angle brackets
+---@return string|nil prefix
+---@return string|nil name
+---@return string|nil suffix
+local function parse_placeholder(body)
+  return body:match("^([^%w]*)(%a+)([^%w]*)$")
+end
+
+---@param template string
+---@param allowed table<string, boolean>
+---@return string|nil the first invalid placeholder, brackets included
+local function invalid_placeholder(template, allowed)
+  for body in template:gmatch("<([^<>]*)>") do
+    local _, name = parse_placeholder(body)
+    if not name or not allowed[name] then
+      return "<" .. body .. ">"
+    end
+  end
+  return nil
+end
+
+---@param template string
+---@param name string
+---@return boolean
+local function template_uses(template, name)
+  for body in template:gmatch("<([^<>]*)>") do
+    local _, found = parse_placeholder(body)
+    if found == name then
+      return true
+    end
+  end
+  return false
+end
+
+local reported_header_errors = {}
+
+---@param key string
+---@param message string
+local function notify_header_error(key, message)
+  if reported_header_errors[key] then
+    return
+  end
+  reported_header_errors[key] = true
+  notify(message, vim.log.levels.ERROR)
+end
+
+---Validate a header template.
+---@param key string config key the template came from
+---@param template any
+---@param vcs "git"|"jj"
+---@return string|nil template, or nil when it is unusable
+local function validated_template(key, template, vcs)
+  if template == nil then
+    return nil
+  end
+  if type(template) ~= "string" then
+    notify_header_error(key .. ":type", key .. " must be a string")
+    return nil
+  end
+
+  local allowed = allowed_placeholders(vcs)
+  local bad = invalid_placeholder(template, allowed)
+  if bad then
+    notify_header_error(
+      key .. ":" .. template,
+      string.format(
+        "unknown placeholder %s in %s (%s repository); valid: %s",
+        bad,
+        key,
+        vcs,
+        placeholder_list(allowed)
+      )
+    )
+    return nil
+  end
+
+  return template
+end
+
+---Resolve the header template for the active repository kind.
+---`jj_header`/`git_header` win over `header` in their own repository kind.
+---@return string
+local function header_template()
+  local vcs = state.vcs or "git"
+  local specific = validated_template(vcs .. "_header", M.config[vcs .. "_header"], vcs)
+  if specific then
+    return specific
+  end
+
+  return validated_template("header", M.config.header, vcs) or DEFAULT_HEADER
+end
+
+local HEADER_HL = {
+  branch = "ZDiffHeaderBranch",
+  desc = "ZDiffHeaderDesc",
+  ref = "ZDiffHeaderRef",
+  mode = "ZDiffHeaderMode",
+  scope = "ZDiffHeaderScope",
+  root = "ZDiffHeaderRoot",
+  path = "ZDiffHeaderPath",
+}
+
+---Expand the header template into highlighted segments.
+---@return {text: string, hl: string}[]
+local function header_segments()
+  local root_name = state.root and vim.fn.fnamemodify(state.root, ":t") or ""
+  local values = {
+    branch = state.head_label or "",
+    desc = state.head_desc or "",
+    ref = state.base_ref or "",
+    mode = state.base_ref and ("Changes vs " .. state.base_ref) or "Uncommitted changes",
+    scope = state.scope or "",
+    root = root_name,
+    path = state.scope or root_name,
+  }
+
+  local template = header_template()
+  local segments = {}
+  local pos = 1
+
+  while true do
+    local match_start, match_end, body = template:find("<([^<>]*)>", pos)
+    if not match_start then
+      break
+    end
+    if match_start > pos then
+      table.insert(
+        segments,
+        { text = template:sub(pos, match_start - 1), hl = "ZDiffHeaderText" }
+      )
+    end
+
+    local prefix, name, suffix = parse_placeholder(body)
+    local value = name and values[name]
+    if not value then
+      -- Unparsable or unknown: keep it visible instead of swallowing it.
+      table.insert(segments, { text = "<" .. body .. ">", hl = "ZDiffHeaderText" })
+    elseif value ~= "" then
+      -- Affixes belong to the value, so an empty value drops them too.
+      table.insert(segments, {
+        text = prefix .. value .. suffix,
+        hl = HEADER_HL[name] or "ZDiffHeaderText",
+      })
+    end
+    pos = match_end + 1
+  end
+
+  if pos <= #template then
+    table.insert(segments, { text = template:sub(pos), hl = "ZDiffHeaderText" })
+  end
+
+  -- A collapsed placeholder can leave the separator that led up to it.
+  while #segments > 0 and segments[#segments].text:match("^%s*$") do
+    table.remove(segments)
+  end
+
+  if state.loading_files then
+    table.insert(segments, { text = " (loading...)", hl = "ZDiffHeaderLoading" })
+  end
+
+  return segments
+end
+
+---Look up the values used by the `<branch>` and `<desc>` placeholders.
+local function load_head_label()
+  if not state.root then
+    state.head_label = nil
+    state.head_desc = nil
+    return
+  end
+
+  state.vcs = git.detect_vcs(
+    state.root,
+    normalize_enum(M.config.header_priority, { git = true, jj = true }, "git")
+  )
+
+  local template = header_template()
+  if not template_uses(template, "branch") and not template_uses(template, "desc") then
+    state.head_label = nil
+    state.head_desc = nil
+    return
+  end
+
+  state.head_seq = state.head_seq + 1
+  local head_seq = state.head_seq
+  local root = state.root
+
+  git.head_label_async(root, state.vcs, function(label, desc)
+    if head_seq ~= state.head_seq or state.root ~= root then
+      return
+    end
+    if label ~= state.head_label or desc ~= state.head_desc then
+      state.head_label = label
+      state.head_desc = desc
+      render()
+    end
+  end)
 end
 
 ---@param display_path string|nil
@@ -679,23 +932,28 @@ render = function()
     skipped_files = {},
   }
 
-  -- Header
-  local mode_text
-  if state.base_ref then
-    mode_text = "Changes vs " .. state.base_ref
-  else
-    mode_text = "Uncommitted changes"
+  local header_line = " "
+  local header_spans = {}
+  for _, segment in ipairs(header_segments()) do
+    if segment.text ~= "" then
+      local col_start = #header_line
+      header_line = header_line .. segment.text
+      table.insert(
+        header_spans,
+        { hl = segment.hl, col_start = col_start, col_end = #header_line }
+      )
+    end
   end
-  if state.scope then
-    mode_text = mode_text .. " in " .. state.scope .. "/"
-  end
-  if state.loading_files then
-    mode_text = mode_text .. " (loading...)"
-  end
-  table.insert(lines, string.format(" zdiff: %s", mode_text))
+
+  table.insert(lines, header_line)
   table.insert(lines, string.rep("-", 60))
-  table.insert(highlights, { #lines - 1, "Title", 0, -1 })
-  table.insert(highlights, { #lines, "Comment", 0, -1 })
+
+  local header_lnum = #lines - 1
+  table.insert(highlights, { header_lnum, "ZDiffHeader", 0, -1 })
+  for _, span in ipairs(header_spans) do
+    table.insert(highlights, { header_lnum, span.hl, span.col_start, span.col_end })
+  end
+  table.insert(highlights, { #lines, "ZDiffHeaderSeparator", 0, -1 })
 
   if #state.files == 0 then
     table.insert(lines, "")
@@ -1244,6 +1502,8 @@ local function refresh()
     expanded_state[file.display_path or file.path] = file.expanded
   end
 
+  load_head_label()
+
   state.refresh_seq = state.refresh_seq + 1
   local refresh_seq = state.refresh_seq
   state.loading_files = true
@@ -1374,6 +1634,10 @@ local function close()
   state.buf = nil
   state.win = nil
   state.root = nil
+  state.vcs = nil
+  state.head_label = nil
+  state.head_desc = nil
+  state.head_seq = state.head_seq + 1
   state.load_error = nil
   state.loading_files = false
   state.refresh_seq = state.refresh_seq + 1
@@ -1387,6 +1651,8 @@ end
 ---@param base_ref? string git ref to diff against (e.g., "main", "develop", "HEAD~3"). If nil, shows uncommitted changes.
 ---@param scope_dir? string|false directory to limit the listing to. nil uses the `scope` config, false forces the whole repository.
 function M.open(base_ref, scope_dir)
+  highlight.setup()
+
   -- Check if we're in a git repo
   local root_result = git.root()
   if not root_result.ok then
@@ -1428,6 +1694,10 @@ function M.open(base_ref, scope_dir)
     end
   end
 
+  if state.root ~= root then
+    state.head_label = nil
+    state.head_desc = nil
+  end
   state.root = root
   state.base_ref = base_ref
   state.scope = scope
@@ -1534,6 +1804,11 @@ function M.setup(opts)
   if opts then
     M.config = vim.tbl_deep_extend("force", M.config, opts)
   end
+
+  -- Report bad placeholders now instead of on the first render.
+  validated_template("header", M.config.header, "git")
+  validated_template("git_header", M.config.git_header, "git")
+  validated_template("jj_header", M.config.jj_header, "jj")
 end
 
 -- Expose for debugging/testing

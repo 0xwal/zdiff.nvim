@@ -6,6 +6,8 @@ if vim.g.loaded_zdiff then
 end
 vim.g.loaded_zdiff = true
 
+require("zdiff.highlight").setup()
+
 -- Git ref completion function
 local function complete_git_refs(arg_lead, _, _)
   -- Get branches and tags

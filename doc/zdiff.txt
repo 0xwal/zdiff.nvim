@@ -11,7 +11,8 @@ CONTENTS                                                      *zdiff-contents*
     3. Commands ................................ |zdiff-commands|
     4. Keymaps ................................. |zdiff-keymaps|
     5. Configuration ........................... |zdiff-configuration|
-    6. Functions ............................... |zdiff-functions|
+    6. Highlights .............................. |zdiff-highlights|
+    7. Functions ............................... |zdiff-functions|
 
 ==============================================================================
 1. INTRODUCTION                                           *zdiff-introduction*
@@ -109,6 +110,16 @@ Call the setup function with an optional configuration table: >lua
       -- Default branch for toggle_mode (m key)
       default_branch = "main",
 
+      -- Header line template, used when no VCS specific one is set
+      header = "diffs(<branch>): <path>",
+
+      -- Optional per VCS templates, each wins over `header`
+      git_header = nil,
+      jj_header = nil,
+
+      -- Which template wins in a colocated jj+git repository
+      header_priority = "git",
+
       -- Default listing scope: "cwd" or "root"
       scope = "cwd",
 
@@ -154,6 +165,109 @@ default_branch ~
     The branch to diff against when using toggle_mode (m key).
     This allows quick switching between uncommitted changes and
     branch comparison without typing the branch name.
+
+                                                         *zdiff-config-header*
+header ~
+    Type: `string`
+    Default: `"diffs(<branch>): <path>"`
+
+    Template for the header line at the top of the zdiff buffer, used in
+    both git and jj repositories. See |zdiff-config-git_header| and
+    |zdiff-config-jj_header| for per VCS templates.
+
+    Placeholders: >
+
+        <branch>  Current git branch. In a jj repository, the bookmarks
+                  pointing at `@`, comma separated, or the short change
+                  id when no bookmark points at `@`.
+        <path>    Active scope directory, or the repository directory
+                  name when the whole repository is listed.
+        <scope>   Active scope directory, empty for the whole repository.
+        <root>    Repository directory name.
+        <ref>     Base ref being diffed against, empty in uncommitted
+                  mode.
+        <mode>    "Uncommitted changes" or "Changes vs <ref>".
+        <desc>    First line of the jj description of `@`. Only valid in
+                  |zdiff-config-jj_header|.
+<
+    A placeholder may carry literal text inside its angle brackets,
+    before and after the name. Those affixes take the placeholder's
+    highlight group, and they disappear together with the value when the
+    value is empty: >lua
+
+        jj_header = 'diffs(<branch>): <path> <"desc">',
+<
+    With a description, that renders: >
+
+        diffs(main): w/y/z "fix the header lookup"
+<
+    and the quotes use |ZDiffHeaderDesc|, not |ZDiffHeaderText|. On a
+    change with no description, the value, the quotes and the space
+    leading up to them are all dropped: >
+
+        diffs(main): w/y/z
+<
+    Affixes may be any characters except letters, digits and angle
+    brackets, so `<(branch)>`, `<[scope]>` and `< | desc>` all work.
+    Writing the quotes outside the brackets keeps them literal, and they
+    remain when the description is empty: `<path> "<desc>"` renders
+    `w/y/z ""`.
+
+    An unknown placeholder is an error: zdiff reports it once and falls
+    back to `header`, or to the default template when `header` itself is
+    invalid. `setup()` validates all three templates immediately.
+
+    ` (loading...)` is appended while the file list refreshes.
+
+    The default template does not distinguish uncommitted mode from a
+    ref comparison; include `<mode>` if you diff against refs often: >lua
+
+        header = "diffs(<branch>): <path> - <mode>",
+        header = "zdiff: <mode> in <path>",
+<
+    The `<branch>` and `<desc>` lookup runs asynchronously, once per
+    refresh, and the header renders without them until it returns. A
+    template using neither skips the lookup entirely. If `jj` or `git`
+    cannot report a value, the placeholder expands to an empty string.
+
+                                                     *zdiff-config-git_header*
+git_header ~
+    Type: `string|nil`
+    Default: `nil`
+
+    Header template used in git repositories. Overrides |zdiff-config-header|.
+    Accepts every placeholder except `<desc>`.
+
+                                                      *zdiff-config-jj_header*
+jj_header ~
+    Type: `string|nil`
+    Default: `nil`
+
+    Header template used in jj repositories. Overrides |zdiff-config-header|.
+    Accepts every placeholder, including `<desc>`: >lua
+
+        require("zdiff").setup({
+          header = "diffs(<branch>): <path>",
+          jj_header = "diffs(<branch>): <path> | <desc>",
+          git_header = "diffs(<branch>): <path>",
+        })
+<
+                                                *zdiff-config-header_priority*
+header_priority ~
+    Type: `"git"|"jj"`
+    Default: `"git"`
+
+    A colocated repository has both a `.jj` and a `.git` directory, so it
+    is both kinds at once. This setting decides which one wins there: it
+    selects the template (|zdiff-config-git_header| or
+    |zdiff-config-jj_header|) and the command that resolves `<branch>`.
+
+    With the default `"git"`, a colocated repository shows the git branch
+    and cannot use `<desc>`. Set `"jj"` to get jj bookmarks and
+    descriptions there.
+
+    A repository with only `.jj` is always treated as jj, and one with
+    only `.git` is always treated as git, whatever this is set to.
 
                                                           *zdiff-config-scope*
 scope ~
@@ -204,7 +318,36 @@ icons ~
     Icons used in the UI for collapsed/expanded states and file status.
 
 ==============================================================================
-6. FUNCTIONS                                                 *zdiff-functions*
+6. HIGHLIGHTS                                               *zdiff-highlights*
+
+The header line is highlighted per component, so each placeholder from
+|zdiff-config-header| can be styled on its own: >
+
+    ZDiffHeader           Base group for the whole header line.
+                          Links to |hl-Comment| by default.
+    ZDiffHeaderText       Literal text between placeholders.
+    ZDiffHeaderSeparator  The dashed line below the header.
+    ZDiffHeaderBranch     <branch>
+    ZDiffHeaderPath       <path>
+    ZDiffHeaderScope      <scope>
+    ZDiffHeaderRoot       <root>
+    ZDiffHeaderRef        <ref>
+    ZDiffHeaderMode       <mode>
+    ZDiffHeaderDesc       <desc>
+    ZDiffHeaderLoading    The " (loading...)" suffix.
+<
+Every component links to `ZDiffHeader` unless you define it, so styling
+`ZDiffHeader` alone restyles the whole header: >lua
+
+    vim.api.nvim_set_hl(0, "ZDiffHeader", { link = "Title" })
+    vim.api.nvim_set_hl(0, "ZDiffHeaderBranch", { fg = "#a6e3a1", bold = true })
+    vim.api.nvim_set_hl(0, "ZDiffHeaderDesc", { link = "Comment", italic = true })
+<
+All defaults are set with `default = true`, so a colorscheme wins over
+them, and they are reapplied on |ColorScheme|.
+
+==============================================================================
+7. FUNCTIONS                                                 *zdiff-functions*
 
                                                                *zdiff.setup()*
 zdiff.setup({opts})

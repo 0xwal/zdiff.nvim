@@ -137,6 +137,30 @@ require("zdiff").setup({
   -- Default branch for toggle_mode (m key)
   default_branch = "main",
 
+  -- Header line template. Placeholders:
+  --   <branch>  git branch, or jj bookmarks at @ (comma separated),
+  --             falling back to the short change id
+  --   <path>    active scope directory, or the repository directory name
+  --   <scope>   active scope directory, empty for the whole repository
+  --   <root>    repository directory name
+  --   <ref>     base ref being diffed against, empty in uncommitted mode
+  --   <mode>    "Uncommitted changes" or "Changes vs <ref>"
+  --   <desc>    first line of the jj description of @ (jj_header only)
+  -- Literal text may sit inside the brackets, around the name: it takes
+  -- the placeholder's highlight and is dropped when the value is empty,
+  -- so `<"desc">` renders "some description" or nothing at all.
+  -- An unknown placeholder is reported once and the template falls back.
+  header = "diffs(<branch>): <path>",
+
+  -- Optional per VCS templates. Each wins over `header` in its own
+  -- repository kind; only `jj_header` may use <desc>.
+  git_header = nil,
+  jj_header = nil,
+
+  -- A colocated repository has both .jj and .git. This picks which
+  -- template and which <branch> lookup wins there.
+  header_priority = "git",
+
   -- Which changes are listed when no directory argument is given:
   -- "cwd" limits the listing to the current working directory,
   -- "root" lists the whole repository.
@@ -217,6 +241,33 @@ require("zdiff").setup({
   },
 })
 ```
+
+## Highlights
+
+The header is highlighted per component, one group per header placeholder:
+
+| Group | Covers |
+|-------|--------|
+| `ZDiffHeader` | Whole header line. Links to `Comment` by default |
+| `ZDiffHeaderText` | Literal text between placeholders |
+| `ZDiffHeaderSeparator` | Dashed line below the header |
+| `ZDiffHeaderBranch` | `<branch>` |
+| `ZDiffHeaderPath` | `<path>` |
+| `ZDiffHeaderScope` | `<scope>` |
+| `ZDiffHeaderRoot` | `<root>` |
+| `ZDiffHeaderRef` | `<ref>` |
+| `ZDiffHeaderMode` | `<mode>` |
+| `ZDiffHeaderDesc` | `<desc>` |
+| `ZDiffHeaderLoading` | ` (loading...)` suffix |
+
+Each component links to `ZDiffHeader` unless you define it, so styling `ZDiffHeader` alone restyles the whole header:
+
+```lua
+vim.api.nvim_set_hl(0, "ZDiffHeader", { link = "Title" })
+vim.api.nvim_set_hl(0, "ZDiffHeaderBranch", { fg = "#a6e3a1", bold = true })
+```
+
+Defaults use `default = true`, so a colorscheme wins over them, and they are reapplied on `ColorScheme`.
 
 ## Health Check
 
