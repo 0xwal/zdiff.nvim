@@ -103,11 +103,8 @@ describe("zdiff", function()
   after_each(function()
     -- Close any zdiff buffers after each test
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.api.nvim_buf_is_valid(buf) then
-        local name = vim.api.nvim_buf_get_name(buf)
-        if name:match("zdiff") then
-          vim.api.nvim_buf_delete(buf, { force = true })
-        end
+      if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].filetype == "zdiff" then
+        vim.api.nvim_buf_delete(buf, { force = true })
       end
     end
     vim.cmd("cd " .. vim.fn.fnameescape(plugin_root))

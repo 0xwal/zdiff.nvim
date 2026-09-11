@@ -100,6 +100,7 @@ local update_winbar
 ---@field default_expanded boolean Whether files are expanded by default
 ---@field default_branch string|nil Default branch for toggle_mode (e.g., "main", "develop")
 ---@field open_mode "replace"|"borrow"|"tab" Where the zdiff buffer is shown
+---@field buffer_name string|nil Name for the zdiff buffer (nil keeps it unnamed)
 ---@field header string Header line template, see zdiff-config-header
 ---@field git_header string|nil Header template used in git repositories
 ---@field jj_header string|nil Header template used in jj repositories
@@ -116,6 +117,7 @@ M.config = {
   default_expanded = false,
   default_branch = "main",
   open_mode = "replace",
+  buffer_name = nil,
   header = "diffs(<branch>): <path>",
   git_header = nil,
   jj_header = nil,
@@ -1869,7 +1871,11 @@ function M.open(base_ref, scope_dir, open_mode)
   vim.bo[state.buf].buftype = "nofile"
   vim.bo[state.buf].bufhidden = "hide"
   vim.bo[state.buf].swapfile = false
-  vim.api.nvim_buf_set_name(state.buf, "zdiff")
+  -- Left unnamed on purpose: :mksession records a named scratch buffer as
+  -- `enew` + `file <name>`, which restores as a phantom buffer.
+  if type(M.config.buffer_name) == "string" and M.config.buffer_name ~= "" then
+    vim.api.nvim_buf_set_name(state.buf, M.config.buffer_name)
+  end
   vim.bo[state.buf].filetype = "zdiff"
   vim.api.nvim_clear_autocmds({ group = augroup })
 
@@ -1968,6 +1974,11 @@ function M.open(base_ref, scope_dir, open_mode)
 
   -- Load and render
   refresh()
+end
+
+---Close the current zdiff session, restoring the window it took.
+function M.close()
+  close()
 end
 
 ---Show the current zdiff session again, without re-resolving the repository.

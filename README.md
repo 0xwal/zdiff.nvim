@@ -107,6 +107,7 @@ vim.keymap.set("n", "<leader>zD", function() require("zdiff").open("main") end, 
 | `:Zdiff tab` | Uncommitted changes in a new tab page |
 | `:Zdiff main lua tab` | All three at once |
 | `:ZdiffFocus` | Return to the current session (e.g. after `<CR>` opened a file) |
+| `:ZdiffClose` | Close the current session, same as `q` |
 
 Arguments are order independent: an argument naming an existing directory sets the scope, `replace`/`borrow`/`tab` set the open mode (see `open_mode`), anything else is treated as a git ref.
 
@@ -149,6 +150,12 @@ require("zdiff").setup({
   --   "tab"     a new tab page, closing closes that tab
   -- `:Zdiff replace|borrow|tab` overrides this per invocation.
   open_mode = "replace",
+
+  -- Name for the zdiff buffer. nil leaves it unnamed, which keeps
+  -- `:mksession` clean: a named scratch buffer is written to the session
+  -- as `enew` + `file <name>` and restores as a phantom buffer. Match on
+  -- the `zdiff` filetype in statusline/bufferline config instead.
+  buffer_name = nil,
 
   -- Header line template. Placeholders:
   --   <branch>  git branch, or jj bookmarks at @ (comma separated),

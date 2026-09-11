@@ -115,3 +115,9 @@ vim.api.nvim_create_user_command("ZdiffFocus", function()
 end, {
   desc = "Show the current zdiff session again",
 })
+
+vim.api.nvim_create_user_command("ZdiffClose", function()
+  require("zdiff").close()
+end, {
+  desc = "Close the current zdiff session",
+})

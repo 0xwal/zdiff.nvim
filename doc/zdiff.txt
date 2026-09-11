@@ -95,6 +95,17 @@ Run `:checkhealth zdiff` to verify your setup.
 
         vim.keymap.set("n", "<leader>gd", require("zdiff").focus)
 <
+                                                                 *:ZdiffClose*
+:ZdiffClose
+    Close the current zdiff session, restoring the window it took, the
+    same as pressing `q` in the zdiff buffer. Does nothing when no
+    session is open.
+
+    Useful before |:mksession| when |zdiff-config-buffer_name| is set: >lua
+
+        silent! ZdiffClose
+        mksession! Session.vim
+<
 ==============================================================================
 4. KEYMAPS                                                     *zdiff-keymaps*
 
@@ -139,6 +150,9 @@ Call the setup function with an optional configuration table: >lua
 
       -- Where the zdiff buffer is shown: "replace", "borrow" or "tab"
       open_mode = "replace",
+
+      -- Name for the zdiff buffer; nil keeps it unnamed (session safe)
+      buffer_name = nil,
 
       -- Header line template, used when no VCS specific one is set
       header = "diffs(<branch>): <path>",
@@ -197,6 +211,23 @@ default_branch ~
     The branch to diff against when using toggle_mode (m key).
     This allows quick switching between uncommitted changes and
     branch comparison without typing the branch name.
+
+                                                    *zdiff-config-buffer_name*
+buffer_name ~
+    Type: `string|nil`
+    Default: `nil`
+
+    Name given to the zdiff buffer. `nil` leaves it unnamed, which is
+    what makes |:mksession| safe: a named scratch buffer is written to
+    the session as `enew` followed by `file <name>`, and restoring that
+    leaves a phantom buffer behind, which can break the session's own
+    cleanup. An unnamed buffer leaves no trace in the session at all.
+
+    Match on the `zdiff` filetype in statusline or bufferline
+    configuration instead of on a buffer name.
+
+    Setting a name brings back the old behavior, and the session problem
+    with it.
 
                                                       *zdiff-config-open_mode*
 open_mode ~
@@ -434,6 +465,10 @@ them, and they are reapplied on |ColorScheme|.
 zdiff.setup({opts})
     Initialize zdiff with the given options. See |zdiff-configuration|.
     This is optional - zdiff works without calling setup().
+
+                                                               *zdiff.close()*
+zdiff.close()
+    Close the current zdiff session. See |:ZdiffClose|.
 
                                                                *zdiff.focus()*
 zdiff.focus()
